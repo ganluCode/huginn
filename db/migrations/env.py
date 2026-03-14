@@ -1,0 +1,73 @@
+"""Alembic 环境配置"""
+
+import os
+from logging.config import fileConfig
+
+from alembic import context
+from sqlalchemy import engine_from_config, pool
+
+# 导入 Base metadata
+from huginn.core.models import Base
+
+# Alembic Config 对象
+config = context.config
+
+# 解释配置文件中的 Python 日志配置
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# 为 autogenerate 支持添加模型的 MetaData 对象
+target_metadata = Base.metadata
+
+# 从环境变量获取数据库 URL
+# 这里优先使用环境变量，回退到 alembic.ini 中的配置
+if os.getenv("DATABASE_URL_SYNC"):
+    config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL_SYNC"))
+
+
+def run_migrations_offline() -> None:
+    """在'离线'模式下运行迁移。
+
+    这种模式不需要实际的数据库连接，而是生成 SQL 脚本。
+    适用于需要审查 SQL 或在数据库不可用时生成迁移的场景。
+    """
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        render_as_batch=True,  # 支持批量迁移（SQLite 等需要）
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    """在'在线'模式下运行迁移。
+
+    这种模式需要实际的数据库连接，直接执行迁移。
+    """
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,  # 支持批量迁移
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+
+# 根据上下文判断是否需要在线执行
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

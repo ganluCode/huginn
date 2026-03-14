@@ -1,0 +1,61 @@
+[project]
+name = "huginn"
+version = "0.1.0"
+description = "个人数据采集中心"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = []
+
+dependencies = [
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic",
+    "pydantic-settings",
+    "asyncpg",
+    "psycopg2-binary",
+    "redis",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "python-dotenv",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["huginn*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "W191",   # indentation contains tabs
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["huginn"]
