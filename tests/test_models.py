@@ -1,5 +1,7 @@
 """SQLAlchemy 模型行为测试"""
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -71,6 +73,7 @@ class TestSpiderRunForeignKey:
         # 不先创建 SpiderRegistry，直接插入 SpiderRun
         run = SpiderRun(
             spider_name="nonexistent_spider",
+            started_at=datetime.now(),
             status="running"
         )
         db_session.add(run)
@@ -92,6 +95,7 @@ class TestSpiderRunForeignKey:
         # 再插入 SpiderRun
         run = SpiderRun(
             spider_name="test_spider",
+            started_at=datetime.now(),
             status="running"
         )
         db_session.add(run)
