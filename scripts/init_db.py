@@ -6,6 +6,7 @@
 3. 运行 Alembic 迁移
 """
 
+import os
 import subprocess
 import sys
 
@@ -16,7 +17,9 @@ def check_postgresql() -> bool:
     """检查 PostgreSQL 连接"""
     try:
         import psycopg2
-        conn = psycopg2.connect(settings.database_url_sync)
+        # 将 SQLAlchemy URL 转为 psycopg2 可识别的格式
+        dsn = settings.database_url_sync.replace("postgresql+psycopg2://", "postgresql://")
+        conn = psycopg2.connect(dsn)
         cursor = conn.cursor()
         cursor.execute("SELECT version()")
         _ = cursor.fetchone()[0]  # 仅验证连接，不使用结果
@@ -54,12 +57,14 @@ def check_redis() -> bool:
 def run_migrations() -> bool:
     """运行 Alembic 迁移"""
     try:
-        # 运行 alembic upgrade head
+        # 运行 alembic upgrade head，传递数据库连接 URL
+        env = {**os.environ, "DATABASE_URL_SYNC": settings.database_url_sync}
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
-            check=False
+            check=False,
+            env=env
         )
 
         if result.returncode != 0:

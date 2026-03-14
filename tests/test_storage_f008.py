@@ -7,13 +7,14 @@ from sqlalchemy.orm import sessionmaker
 
 from huginn.core.models import Base, CollectedData
 from huginn.core.storage import PostgresBackend
+from tests.conftest import DATABASE_URL_ASYNC
 
 
 @pytest_asyncio.fixture(scope="function")
 async def async_engine_with_tables():
     """创建测试用的异步引擎和表"""
     engine = create_async_engine(
-        "postgresql+asyncpg://huginn:huginn@localhost:5432/huginn_test",
+        DATABASE_URL_ASYNC,
         echo=False,
     )
 

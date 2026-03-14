@@ -13,6 +13,7 @@ import logging
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
+from sqlalchemy import String, cast
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -243,17 +244,15 @@ class PostgresBackend:
                     conditions.append(CollectedData.category == category)
 
                 if keyword is not None:
-                    # 使用参数化查询防止 SQL 注入
-                    # 搜索 data->>'title' (使用 .op('->>') 访问 JSONB 字段)
-                    # 和 data::text (将整个 JSONB 转为文本)
-                    keyword_pattern = f"%{keyword}%"
+                    # 转义 LIKE 特殊字符，防止 SQL 注入
+                    escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                    keyword_pattern = f"%{escaped}%"
 
-                    # 使用 PostgreSQL 的 JSONB 操作符和文本转换
-                    # data->>'title' 创建一个文本提取表达式
+                    # data->>'title' ILIKE
                     title_search = CollectedData.data.op("->>")("title").ilike(keyword_pattern)
 
-                    # data::text 将整个 JSONB 转为文本搜索
-                    full_text_search = CollectedData.data.astext.ilike(keyword_pattern)
+                    # data::text ILIKE（用 cast 替代已移除的 astext）
+                    full_text_search = cast(CollectedData.data, String).ilike(keyword_pattern)
 
                     conditions.append(or_(title_search, full_text_search))
 

@@ -21,6 +21,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-mock",
+    "python-dotenv",
     "ruff",
 ]
 
@@ -30,6 +31,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["huginn*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
