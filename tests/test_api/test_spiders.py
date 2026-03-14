@@ -516,3 +516,267 @@ class TestSpiderRunEndpoint:
         assert "scrapy" in str(cmd)
         assert "crawl" in str(cmd)
         assert "hackernews" in str(cmd)
+
+
+class TestSpiderRunsEndpoint:
+    """测试 GET /api/spiders/{name}/runs 端点"""
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_returns_200_with_items_and_total(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession
+    ):
+        """GET /api/spiders/hackernews/runs 返回 200，body 含 items 和 total"""
+        from huginn.core.models import SpiderRun
+
+        now = datetime.now(timezone.utc)
+
+        # 创建一些运行记录
+        runs = [
+            SpiderRun(
+                spider_name="hackernews",
+                started_at=now.replace(microsecond=300000),
+                finished_at=now.replace(microsecond=400000),
+                status="success",
+                item_count=30,
+                duration_ms=1000,
+            ),
+            SpiderRun(
+                spider_name="hackernews",
+                started_at=now.replace(microsecond=100000),
+                finished_at=now.replace(microsecond=200000),
+                status="success",
+                item_count=25,
+                duration_ms=800,
+            ),
+        ]
+        test_session.add_all(runs)
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/hackernews/runs")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert "items" in data
+        assert "total" in data
+        assert isinstance(data["items"], list)
+        assert isinstance(data["total"], int)
+        assert data["total"] == 2
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_nonexistent_spider_returns_404(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry]
+    ):
+        """GET /api/spiders/nonexistent/runs 返回 404"""
+        response = await client.get("/api/spiders/nonexistent/runs")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+        data = response.json()
+        assert "detail" in data
+        assert data["detail"] == "Spider 'nonexistent' not found"
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_limit_parameter(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession
+    ):
+        """limit=5 时最多返回 5 条记录"""
+        from huginn.core.models import SpiderRun
+
+        now = datetime.now(timezone.utc)
+
+        # 创建 10 条运行记录
+        runs = [
+            SpiderRun(
+                spider_name="hackernews",
+                started_at=now.replace(microsecond=i * 10000),
+                status="success",
+                item_count=i,
+            )
+            for i in range(10)
+        ]
+        test_session.add_all(runs)
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/hackernews/runs?limit=5")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert len(data["items"]) == 5
+        assert data["total"] == 10  # total 应该是总数，不受 limit 影响
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_limit_max_truncated_to_100(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession
+    ):
+        """limit=200 时截断为 100 条"""
+        from huginn.core.models import SpiderRun
+
+        now = datetime.now(timezone.utc)
+
+        # 创建 150 条运行记录
+        runs = [
+            SpiderRun(
+                spider_name="hackernews",
+                started_at=now.replace(microsecond=i * 1000),
+                status="success",
+                item_count=i,
+            )
+            for i in range(150)
+        ]
+        test_session.add_all(runs)
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/hackernews/runs?limit=200")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert len(data["items"]) == 100  # 应该被截断为 100
+        assert data["total"] == 150
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_default_limit_20(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession
+    ):
+        """不传 limit 时默认为 20"""
+        from huginn.core.models import SpiderRun
+
+        now = datetime.now(timezone.utc)
+
+        # 创建 30 条运行记录
+        runs = [
+            SpiderRun(
+                spider_name="hackernews",
+                started_at=now.replace(microsecond=i * 1000),
+                status="success",
+                item_count=i,
+            )
+            for i in range(30)
+        ]
+        test_session.add_all(runs)
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/hackernews/runs")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert len(data["items"]) == 20  # 默认 limit=20
+        assert data["total"] == 30
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_offset_parameter(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession
+    ):
+        """offset=10 时跳过前 10 条记录"""
+        from huginn.core.models import SpiderRun
+
+        now = datetime.now(timezone.utc)
+
+        # 创建 20 条运行记录
+        runs = [
+            SpiderRun(
+                spider_name="hackernews",
+                started_at=now.replace(microsecond=i * 10000),
+                status="success",
+                item_count=i,
+            )
+            for i in range(20)
+        ]
+        test_session.add_all(runs)
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/hackernews/runs?offset=10&limit=5")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert len(data["items"]) == 5
+        assert data["total"] == 20
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_ordered_by_started_at_desc(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession
+    ):
+        """items 按 started_at DESC 排序"""
+        from huginn.core.models import SpiderRun
+
+        now = datetime.now(timezone.utc)
+
+        # 创建 3 条不同 started_at 的记录
+        run1 = SpiderRun(
+            spider_name="hackernews",
+            started_at=now.replace(microsecond=100000),
+            status="success",
+            item_count=10,
+        )
+        run2 = SpiderRun(
+            spider_name="hackernews",
+            started_at=now.replace(microsecond=300000),
+            status="success",
+            item_count=30,
+        )
+        run3 = SpiderRun(
+            spider_name="hackernews",
+            started_at=now.replace(microsecond=200000),
+            status="success",
+            item_count=20,
+        )
+
+        test_session.add_all([run1, run2, run3])
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/hackernews/runs")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        items = data["items"]
+        # 验证顺序：run2 (300000) > run3 (200000) > run1 (100000)
+        assert items[0]["item_count"] == 30
+        assert items[1]["item_count"] == 20
+        assert items[2]["item_count"] == 10
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_empty_list(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry]
+    ):
+        """没有运行记录时返回空列表"""
+        response = await client.get("/api/spiders/hackernews/runs")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert len(data["items"]) == 0
+        assert data["total"] == 0
+
+    @pytest.mark.asyncio
+    async def test_spider_runs_response_structure(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession
+    ):
+        """验证响应包含 RunItem 的所有必需字段"""
+        from huginn.core.models import SpiderRun
+
+        now = datetime.now(timezone.utc)
+
+        run = SpiderRun(
+            spider_name="hackernews",
+            started_at=now,
+            finished_at=now,
+            status="success",
+            item_count=30,
+            duration_ms=1000,
+            error_message=None,
+        )
+        test_session.add(run)
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/hackernews/runs")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        item = data["items"][0]
+
+        # 验证所有必需字段存在
+        assert "id" in item
+        assert "spider_name" in item
+        assert "started_at" in item
+        assert "finished_at" in item
+        assert "status" in item
+        assert "item_count" in item
+        assert "error_message" in item
+        assert "duration_ms" in item

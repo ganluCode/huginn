@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from huginn.api.deps import get_db_session
 from huginn.api.schemas import (
+    RunItem,
     RunListResponse,
     SpiderDetail,
     SpiderItem,
@@ -179,3 +180,68 @@ async def trigger_spider_run(
         message=f"Spider '{name}' started successfully",
         run_id=run.id,
     )
+
+
+@router.get("/spiders/{name}/runs", response_model=RunListResponse)
+async def list_spider_runs(
+    name: str,
+    limit: int = Query(default=20, ge=1),
+    offset: int = Query(default=0, ge=0),
+    db_session: AsyncSession | None = Depends(get_db_session),
+) -> RunListResponse:
+    """获取 Spider 运行历史
+
+    支持分页查询，按 started_at DESC 排序。
+
+    Args:
+        name: Spider 名称
+        limit: 每页条数，默认 20，最大截断为 100
+        offset: 偏移量，默认 0
+        db_session: 数据库 session（依赖注入）
+
+    Returns:
+        RunListResponse: 包含 items 列表和 total 总数
+
+    Raises:
+        HTTPException: Spider 不存在时返回 404
+    """
+    # 截断 limit 最大为 100
+    limit = min(limit, 100)
+
+    if db_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Spider '{name}' not found",
+        )
+
+    # 1. 校验 Spider 存在
+    spider_query = select(SpiderRegistry).where(SpiderRegistry.name == name)
+    spider_result = await db_session.execute(spider_query)
+    spider = spider_result.scalar_one_or_none()
+
+    if spider is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Spider '{name}' not found",
+        )
+
+    # 2. 查询总数
+    count_query = select(SpiderRun).where(SpiderRun.spider_name == name)
+    count_result = await db_session.execute(count_query)
+    total = len(count_result.scalars().all())
+
+    # 3. 查询运行记录（带分页和排序）
+    query = (
+        select(SpiderRun)
+        .where(SpiderRun.spider_name == name)
+        .order_by(SpiderRun.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db_session.execute(query)
+    runs = result.scalars().all()
+
+    # 4. 转换为响应模型
+    items = [RunItem.model_validate(run) for run in runs]
+
+    return RunListResponse(items=items, total=total)
