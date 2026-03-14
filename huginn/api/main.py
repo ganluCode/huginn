@@ -95,9 +95,10 @@ async def health_check(
 
 
 # 导入并注册 Spider 路由到 api_router
-from huginn.api.routers import spiders  # noqa: E402
+from huginn.api.routers import data, spiders  # noqa: E402
 
 api_router.include_router(spiders.router)
+api_router.include_router(data.router, prefix="/data")
 
 # 将 API 路由挂载到 /api 前缀
 app.include_router(api_router, prefix="/api")
