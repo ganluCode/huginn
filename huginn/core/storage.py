@@ -291,8 +291,42 @@ class PostgresBackend:
         Returns:
             最新的 n 条数据，按 collected_at 降序排列
         """
-        # TODO: 在 F-008 中实现
-        raise NotImplementedError("get_latest method will be implemented in F-008")
+        from sqlalchemy import and_, func, select
+
+        async with self._session_factory() as session:
+            try:
+                # 构建查询
+                stmt = select(CollectedData)
+
+                # 添加 source 过滤条件
+                if source is not None:
+                    stmt = stmt.where(CollectedData.source == source)
+
+                # 排序：按 collected_at DESC
+                stmt = stmt.order_by(CollectedData.collected_at.desc())
+
+                # 限制返回数量
+                stmt = stmt.limit(n)
+
+                # 执行查询
+                result = await session.execute(stmt)
+                rows = result.scalars().all()
+
+                # 转换为字典格式
+                return [
+                    {
+                        "id": row.id,
+                        "source": row.source,
+                        "category": row.category,
+                        "collected_at": row.collected_at.isoformat(),
+                        "data": row.data,
+                    }
+                    for row in rows
+                ]
+
+            except Exception as e:
+                logger.error(f"Failed to get latest data: {e}")
+                raise StorageError(f"Get latest failed: {str(e)}") from e
 
     async def count(self, source: str | None = None, category: str | None = None) -> int:
         """统计符合条件的记录数
@@ -304,5 +338,32 @@ class PostgresBackend:
         Returns:
             符合条件的记录总数
         """
-        # TODO: 在 F-008 中实现
-        raise NotImplementedError("count method will be implemented in F-008")
+        from sqlalchemy import and_, func, select
+
+        async with self._session_factory() as session:
+            try:
+                # 构建计数查询
+                stmt = select(func.count(CollectedData.id))
+
+                # 构建 WHERE 条件
+                conditions = []
+
+                if source is not None:
+                    conditions.append(CollectedData.source == source)
+
+                if category is not None:
+                    conditions.append(CollectedData.category == category)
+
+                # 应用所有条件
+                if conditions:
+                    stmt = stmt.where(and_(*conditions))
+
+                # 执行查询
+                result = await session.execute(stmt)
+                count_value = result.scalar_one()
+
+                return int(count_value) if count_value is not None else 0
+
+            except Exception as e:
+                logger.error(f"Failed to count data: {e}")
+                raise StorageError(f"Count failed: {str(e)}") from e

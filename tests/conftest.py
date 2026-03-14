@@ -75,7 +75,7 @@ def db_session(sync_engine, _create_tables) -> Generator[Session, None, None]:
     connection.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def async_db_session(
     async_engine: AsyncEngine, _create_tables
 ) -> AsyncGenerator[AsyncSession, None]:
