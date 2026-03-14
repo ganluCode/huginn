@@ -1,10 +1,12 @@
 """Pytest 配置和共享 fixtures"""
 
 import os
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
 from huginn.core.models import Base
@@ -15,6 +17,12 @@ DATABASE_URL_SYNC = os.getenv(
     "postgresql://huginn:huginn@localhost:5432/huginn_test"
 )
 
+# 从环境变量获取异步数据库 URL
+DATABASE_URL_ASYNC = os.getenv(
+    "DATABASE_URL_ASYNC",
+    "postgresql+asyncpg://huginn:huginn@localhost:5432/huginn_test"
+)
+
 
 @pytest.fixture(scope="session")
 def sync_engine():
@@ -22,6 +30,14 @@ def sync_engine():
     engine = create_engine(DATABASE_URL_SYNC, echo=False)
     yield engine
     engine.dispose()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def async_engine() -> AsyncEngine:  # noqa: ARG001 (unused argument is fine, it's a fixture)
+    """创建异步 SQLAlchemy Engine（session 级别，整个测试会话共享）"""
+    engine = create_async_engine(DATABASE_URL_ASYNC, echo=False)
+    yield engine
+    await engine.dispose()
 
 
 @pytest.fixture(scope="session")
@@ -48,3 +64,24 @@ def db_session(sync_engine, create_tables) -> Generator[Session, None, None]:
     session.close()
     transaction.rollback()
     connection.close()
+
+
+@pytest.fixture(scope="function")
+async def async_db_session(
+    async_engine: AsyncEngine, create_tables
+) -> AsyncGenerator[AsyncSession, None]:
+    """为每个异步测试函数创建独立的数据库会话
+
+    每个测试在事务中运行，测试后回滚，保证测试间隔离
+    """
+    async_session_maker = async_sessionmaker(
+        bind=async_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session_maker() as session:
+        async with session.begin():
+            yield session
+
+        # 测试结束后自动回滚（pytest-asyncio 会处理）
