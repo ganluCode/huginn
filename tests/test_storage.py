@@ -3,6 +3,8 @@
 测试 PostgresBackend 的所有方法，包括：
 - save_items: 批量保存采集数据
 - query: 按条件查询采集数据
+- get_latest: 获取最新数据
+- count: 统计记录数
 - 数据库异常处理
 
 注意：部分测试需要真实的 PostgreSQL 数据库连接。
@@ -10,11 +12,11 @@
     docker compose up -d postgres
 """
 
-
-from datetime import datetime
+from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import exc as sqlalchemy_exc
 from sqlalchemy import text
 
 from huginn.core.exceptions import StorageError
@@ -444,3 +446,317 @@ class TestPostgresBackendQueryMocked:
                 await backend.query()
 
             assert "Query failed" in str(exc_info.value)
+
+
+class TestPostgresBackendGetLatest:
+    """测试 PostgresBackend.get_latest 方法"""
+
+    @pytest.mark.asyncio
+    async def test_get_latest_default_returns_twenty(self, async_engine):
+        """get_latest() 不传参时应返回最新 20 条"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入 25 条数据
+        items = [{"title": f"Item {i}", "order": i} for i in range(25)]
+        await backend.save_items("test_get_latest", "tech", items)
+
+        # 查询最新 20 条
+        results = await backend.get_latest()
+
+        assert len(results) == 20
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source = 'test_get_latest'"))
+
+    @pytest.mark.asyncio
+    async def test_get_latest_with_source_filter(self, async_engine):
+        """get_latest(source='hackernews', n=5) 应返回最多 5 条指定 source 的数据"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入不同 source 的数据
+        await backend.save_items("source_a", "tech", [{"title": "A1"}])
+        await backend.save_items("source_b", "tech", [{"title": "B1"}])
+        await backend.save_items("source_a", "tech", [{"title": "A2"}])
+        await backend.save_items("source_a", "tech", [{"title": "A3"}])
+
+        # 查询 source_a 的最新 2 条
+        results = await backend.get_latest(source="source_a", n=2)
+
+        assert len(results) == 2
+        assert all(r["source"] == "source_a" for r in results)
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source IN ('source_a', 'source_b')"))
+
+    @pytest.mark.asyncio
+    async def test_get_latest_returns_desc_order(self, async_engine):
+        """get_latest 返回结果应按 collected_at DESC 排序"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入数据（会有时间差异）
+        import asyncio
+        for i in range(5):
+            await backend.save_items("test_order", "tech", [{"title": f"Item {i}", "seq": i}])
+            await asyncio.sleep(0.01)  # 确保时间差异
+
+        # 查询最新 5 条
+        results = await backend.get_latest(source="test_order", n=5)
+
+        # 验证排序（按 collected_at DESC）
+        times = [r["collected_at"] for r in results]
+        assert times == sorted(times, reverse=True), "Results should be ordered by collected_at DESC"
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source = 'test_order'"))
+
+    @pytest.mark.asyncio
+    async def test_get_latest_cross_source(self, async_engine):
+        """get_latest(source=None, n=10) 应跨所有 source 返回最新 10 条"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入多个 source 的数据
+        await backend.save_items("source_a", "tech", [{"title": "A1"}])
+        await backend.save_items("source_b", "tech", [{"title": "B1"}])
+        await backend.save_items("source_c", "social", [{"title": "C1"}])
+
+        # 跨 source 查询
+        results = await backend.get_latest(source=None, n=10)
+        sources = {r["source"] for r in results}
+
+        assert "source_a" in sources
+        assert "source_b" in sources
+        assert "source_c" in sources
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source IN ('source_a', 'source_b', 'source_c')"))
+
+
+class TestPostgresBackendCount:
+    """测试 PostgresBackend.count 方法"""
+
+    @pytest.mark.asyncio
+    async def test_count_returns_total_rows(self, async_engine):
+        """count() 应返回 collected_data 表总行数"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入数据前计数
+        before = await backend.count()
+
+        # 写入 5 条
+        await backend.save_items("test_count", "tech", [
+            {"title": f"Item {i}"} for i in range(5)
+        ])
+
+        # 写入后计数
+        after = await backend.count()
+        assert after == before + 5
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source = 'test_count'"))
+
+    @pytest.mark.asyncio
+    async def test_count_with_source_filter(self, async_engine):
+        """count(source='hackernews') 应只统计指定 source 的行数"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入不同 source 的数据
+        await backend.save_items("source_a", "tech", [{"title": "A1"}])
+        await backend.save_items("source_a", "tech", [{"title": "A2"}])
+        await backend.save_items("source_b", "tech", [{"title": "B1"}])
+
+        assert await backend.count(source="source_a") == 2
+        assert await backend.count(source="source_b") == 1
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source IN ('source_a', 'source_b')"))
+
+    @pytest.mark.asyncio
+    async def test_count_with_category_filter(self, async_engine):
+        """count(category='tech') 应只统计指定 category 的行数"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入不同 category 的数据
+        await backend.save_items("test_source", "tech", [{"title": "T1"}])
+        await backend.save_items("test_source", "tech", [{"title": "T2"}])
+        await backend.save_items("test_source", "social", [{"title": "S1"}])
+
+        assert await backend.count(category="tech") == 2
+        assert await backend.count(category="social") == 1
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source = 'test_source'"))
+
+    @pytest.mark.asyncio
+    async def test_count_with_combined_filters(self, async_engine):
+        """count(source, category) 应同时过滤两个条件"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 写入不同组合的数据
+        await backend.save_items("source_a", "tech", [{"title": "AT1"}])
+        await backend.save_items("source_a", "tech", [{"title": "AT2"}])
+        await backend.save_items("source_a", "social", [{"title": "AS1"}])
+        await backend.save_items("source_b", "tech", [{"title": "BT1"}])
+
+        # 组合查询
+        assert await backend.count(source="source_a", category="tech") == 2
+        assert await backend.count(source="source_a", category="social") == 1
+        assert await backend.count(source="source_b", category="tech") == 1
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source IN ('source_a', 'source_b')"))
+
+
+class TestPostgresBackendSaveItemsIntegration:
+    """测试 save_items 与其他方法的集成"""
+
+    @pytest.mark.asyncio
+    async def test_save_items_increases_count(self, async_engine):
+        """save_items 写入 N 条后 count() 应增加 N"""
+        if not await check_db_available(async_engine):
+            pytest.skip("Database not available")
+
+        backend = PostgresBackend(engine=async_engine)
+
+        # 获取初始计数
+        initial_count = await backend.count(source="test_integration")
+
+        # 写入 3 条数据
+        items = [
+            {"title": f"Item {i}", "score": i * 10, "url": f"http://example.com/{i}"}
+            for i in range(3)
+        ]
+        saved_count = await backend.save_items("test_integration", "tech", items)
+
+        # 验证保存数量
+        assert saved_count == 3
+
+        # 验证 count 增加
+        final_count = await backend.count(source="test_integration")
+        assert final_count == initial_count + 3
+
+        # 清理
+        async with async_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM collected_data WHERE source = 'test_integration'"))
+
+
+class TestPostgresBackendExceptionHandlingMocked:
+    """使用 mock 测试 PostgresBackend 的异常处理（无需真实数据库）"""
+
+    @pytest.mark.asyncio
+    async def test_database_error_raises_storage_error(self):
+        """数据库异常时 save_items 应抛出 StorageError"""
+        backend = PostgresBackend()
+
+        # Mock session.execute 抛出数据库异常
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = sqlalchemy_exc.DBAPIError("Connection failed", {}, None)
+
+        with patch.object(backend, "_session_factory") as mock_factory:
+            mock_factory.return_value.__aenter__.return_value = mock_session
+
+            with pytest.raises(StorageError) as exc_info:
+                await backend.save_items("test", "tech", [{"title": "Test"}])
+
+            # 验证异常类型
+            assert isinstance(exc_info.value, StorageError)
+            assert "Database error" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_storage_error_hides_password(self):
+        """StorageError 信息不应包含数据库密码"""
+        backend = PostgresBackend()
+
+        # Mock session 抛出包含密码的异常
+        error_msg = "connection to server at \"localhost\", port 5432 failed: FATAL: password authentication failed for user 'huginn' with password 'secret123'"
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = sqlalchemy_exc.DBAPIError(error_msg, {}, Exception())
+
+        with patch.object(backend, "_session_factory") as mock_factory:
+            mock_factory.return_value.__aenter__.return_value = mock_session
+
+            with pytest.raises(StorageError) as exc_info:
+                await backend.save_items("test", "tech", [{"title": "Test"}])
+
+            # 验证错误信息不包含密码
+            error_message = str(exc_info.value)
+            assert "secret123" not in error_message
+            # 不应该有明文 password 字段出现
+            assert "password 'secret123'" not in error_message
+            assert "password=secret123" not in error_message
+
+    @pytest.mark.asyncio
+    async def test_storage_error_hides_connection_string(self):
+        """StorageError 信息应隐藏连接字符串中的密码"""
+        backend = PostgresBackend()
+
+        # Mock session 抛出包含连接字符串的异常
+        error_msg = "could not connect to server: Connection refused postgresql://huginn:my_secret_pass@localhost:5432/db"
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = sqlalchemy_exc.DBAPIError(error_msg, {}, Exception())
+
+        with patch.object(backend, "_session_factory") as mock_factory:
+            mock_factory.return_value.__aenter__.return_value = mock_session
+
+            with pytest.raises(StorageError) as exc_info:
+                await backend.save_items("test", "tech", [{"title": "Test"}])
+
+            # 验证错误信息不包含敏感的密码部分
+            error_message = str(exc_info.value)
+            assert "my_secret_pass" not in error_message
+            # 密码应该被替换为 ***
+            assert "***" in error_message
+            # 不应该包含完整的用户名:密码组合
+            assert "huginn:my_secret_pass@" not in error_message
+            # 可以保留主机名和端口（这些不是敏感信息）
+            assert "localhost:5432" in error_message
+
+    @pytest.mark.asyncio
+    async def test_storage_error_preserves_error_context(self):
+        """StorageError 应保留原始错误作为 cause"""
+        backend = PostgresBackend()
+
+        # 创建一个自定义数据库异常
+        original_error = sqlalchemy_exc.DBAPIError("Table doesn't exist", {}, None)
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = original_error
+
+        with patch.object(backend, "_session_factory") as mock_factory:
+            mock_factory.return_value.__aenter__.return_value = mock_session
+
+            with pytest.raises(StorageError) as exc_info:
+                await backend.save_items("test", "tech", [{"title": "Test"}])
+
+            # 验证原始错误被保留为 cause
+            assert exc_info.value.__cause__ is original_error

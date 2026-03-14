@@ -38,8 +38,11 @@ def sync_engine():
 
 
 @pytest_asyncio.fixture(scope="session")
-async def async_engine() -> AsyncEngine:  # noqa: ARG001 (unused argument is fine, it's a fixture)
-    """创建异步 SQLAlchemy Engine（session 级别，整个测试会话共享）"""
+async def async_engine(_create_tables) -> AsyncEngine:  # noqa: ARG001 (unused argument is fine, it's a fixture)
+    """创建异步 SQLAlchemy Engine（session 级别，整个测试会话共享）
+
+    注意：依赖 _create_tables fixture 确保表被创建。
+    """
     engine = create_async_engine(DATABASE_URL_ASYNC, echo=False)
     yield engine
     await engine.dispose()

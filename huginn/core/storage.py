@@ -179,13 +179,25 @@ class PostgresBackend:
                 await session.rollback()
                 # 清理错误消息，移除可能的敏感信息（如数据库密码）
                 error_msg = str(e)
-                # 移除包含密码的连接字符串片段
-                if "://" in error_msg:
-                    # 简单清理：移除协议和认证部分
-                    cleaned_msg = error_msg.split("://")[-1].split("@")[-1] if "@" in error_msg else error_msg
-                    error_msg = f"Database error: {cleaned_msg}"
-                else:
-                    error_msg = f"Database error: {error_msg}"
+
+                # 清理多种可能的密码泄露模式
+                import re
+
+                # 模式 1: postgresql://user:password@host:port/db
+                # 模式 2: password 'secret123' 或 password="secret123"
+                # 模式 3: with password 'secret123'
+
+                # 移除连接字符串中的认证部分
+                if "://" in error_msg and "@" in error_msg:
+                    # 匹配 protocol://user:password@host
+                    error_msg = re.sub(r'(\w+)://\S+?@', r'\1://***@', error_msg)
+
+                # 移除明文密码声明 (password 'xxx' 或 password="xxx")
+                error_msg = re.sub(r"password\s*['\"][^'\"]*['\"]", "password '***'", error_msg, flags=re.IGNORECASE)
+                error_msg = re.sub(r"with\s+password\s+['\"][^'\"]*['\"]", "with password '***'", error_msg, flags=re.IGNORECASE)
+
+                # 添加统一前缀
+                error_msg = f"Database error: {error_msg}"
 
                 logger.error(f"Failed to save items for source={source}: {error_msg}")
                 raise StorageError(error_msg) from e
