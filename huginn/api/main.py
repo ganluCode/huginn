@@ -3,8 +3,6 @@
 创建并配置 FastAPI 应用实例。
 """
 
-from typing import Annotated
-
 from fastapi import APIRouter, Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -29,7 +27,7 @@ app.add_middleware(
 
 # HuginnError 异常处理器
 @app.exception_handler(HuginnError)
-async def huginn_error_handler(request: Request, exc: HuginnError) -> JSONResponse:
+async def huginn_error_handler(_request: Request, exc: HuginnError) -> JSONResponse:
     """处理 HuginnError 及其子类异常，返回 JSON 格式的错误响应
 
     Args:

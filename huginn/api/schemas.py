@@ -3,10 +3,9 @@
 定义 API 响应的 Pydantic 模型，用于序列化和数据验证。
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, field_serializer
-
 
 # Spider 相关响应模型
 
@@ -36,10 +35,7 @@ class SpiderItem(BaseModel):
         if dt is None:
             return None
         # 确保 datetime 有时区信息，转换为 UTC
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
         # 返回带 Z 后缀的 ISO 格式
         return dt.isoformat().replace("+00:00", "Z")
 
@@ -90,10 +86,7 @@ class RunItem(BaseModel):
         if dt is None:
             return None
         # 确保 datetime 有时区信息，转换为 UTC
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
         # 返回带 Z 后缀的 ISO 格式
         return dt.isoformat().replace("+00:00", "Z")
 

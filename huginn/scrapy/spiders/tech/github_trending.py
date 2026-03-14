@@ -16,7 +16,6 @@ GitHub Trending 页面结构：
 
 import logging
 
-from scrapy import Spider
 from scrapy.http import HtmlResponse
 
 from huginn.core.constants import Category

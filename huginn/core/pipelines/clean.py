@@ -65,7 +65,7 @@ class CleanPipeline(Pipeline):
             Category(category)
         except ValueError:
             logger.warning("Validation failed: invalid category '%s'", category)
-            raise ValidationError(f"category '{category}' is not a valid Category value")
+            raise ValidationError(f"category '{category}' is not a valid Category value") from None
 
     def _validate_data(self, data: dict) -> None:
         """Validate data field."""

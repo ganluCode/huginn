@@ -302,7 +302,7 @@ class PostgresBackend:
         Returns:
             最新的 n 条数据，按 collected_at 降序排列
         """
-        from sqlalchemy import and_, func, select
+        from sqlalchemy import select
 
         async with self._session_factory() as session:
             try:

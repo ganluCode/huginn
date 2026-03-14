@@ -4,7 +4,7 @@
 """
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -162,7 +162,7 @@ async def trigger_spider_run(
     # 3. 在 spider_runs 插入 running 记录
     run = SpiderRun(
         spider_name=name,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         status="running",
     )
     db_session.add(run)
