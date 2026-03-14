@@ -1,6 +1,6 @@
 """Test Scrapy pipelines - CleanScrapyPipeline, DedupScrapyPipeline, and StorageScrapyPipeline (F-004, F-005, F-006, F-008)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -449,7 +449,7 @@ class TestStorageScrapyPipeline:
 
         mock_session = MagicMock()
         # Create a fresh SpiderRun mock with item_count=0
-        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(timezone.utc), status="running", item_count=0)
+        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(UTC), status="running", item_count=0)
         mock_run.id = 123
         # Create a fresh SpiderRegistry mock (should exist)
         mock_registry = SpiderRegistry(name="test_spider", engine="scrapy", category="tech", enabled=True, item_count=0)
@@ -516,7 +516,7 @@ class TestStorageScrapyPipeline:
 
         mock_session = MagicMock()
         # Create fresh SpiderRun mock
-        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(timezone.utc), status="running", item_count=0)
+        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(UTC), status="running", item_count=0)
         mock_run.id = 123
         # Create fresh SpiderRegistry mock
         mock_registry = SpiderRegistry(name="test_spider", engine="scrapy", category="tech", enabled=True, item_count=10)
@@ -577,7 +577,7 @@ class TestStorageScrapyPipeline:
 
         mock_session = MagicMock()
         # Create fresh SpiderRun mock
-        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(timezone.utc), status="running", item_count=0)
+        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(UTC), status="running", item_count=0)
         mock_run.id = 123
         # Create fresh SpiderRegistry mock
         mock_registry = SpiderRegistry(name="test_spider", engine="scrapy", category="tech", enabled=True, item_count=10)
@@ -636,7 +636,7 @@ class TestStorageScrapyPipeline:
         mock_session = MagicMock()
         mock_session.commit.side_effect = Exception("DB error")
         # Create fresh SpiderRun mock
-        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(timezone.utc), status="running", item_count=0)
+        mock_run = SpiderRun(spider_name="test_spider", started_at=datetime.now(UTC), status="running", item_count=0)
         mock_run.id = 123
         # Create fresh SpiderRegistry mock (for the third query call)
         mock_registry = SpiderRegistry(name="test_spider", engine="scrapy", category="tech", enabled=True, item_count=0)

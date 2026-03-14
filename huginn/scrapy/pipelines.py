@@ -10,11 +10,10 @@ Pipelines:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from scrapy.exceptions import DropItem
 from scrapy.spiders import Spider
-from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -24,7 +23,6 @@ from huginn.core.models import SpiderRegistry, SpiderRun
 from huginn.core.pipelines.clean import CleanPipeline
 from huginn.core.pipelines.dedup import DedupPipeline
 from huginn.core.pipelines.storage import StoragePipeline
-from huginn.core.storage import PostgresBackend
 
 logger = logging.getLogger(__name__)
 
@@ -264,7 +262,7 @@ class StorageScrapyPipeline:
         self.storage_pipeline = StoragePipeline(backend)
 
         # Record start time
-        self._started_at = datetime.now(timezone.utc)
+        self._started_at = datetime.now(UTC)
         self._item_count = 0
 
         # Auto-register spider in spider_registry if not exists
@@ -370,7 +368,7 @@ class StorageScrapyPipeline:
             return
 
         # Calculate duration
-        finished_at = datetime.now(timezone.utc)
+        finished_at = datetime.now(UTC)
         duration_ms = 0
         if self._started_at is not None:
             duration_ms = int((finished_at - self._started_at).total_seconds() * 1000)
@@ -468,7 +466,7 @@ class _SyncPostgresBackend:
                     "source": source,
                     "category": category,
                     "data": item,
-                    "collected_at": datetime.now(timezone.utc),
+                    "collected_at": datetime.now(UTC),
                 }
                 for item in items
             ]
