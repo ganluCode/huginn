@@ -15,6 +15,9 @@ dependencies = [
     "asyncpg",
     "psycopg2-binary",
     "redis",
+    "fastapi>=0.110",
+    "uvicorn[standard]",
+    "httpx",
 ]
 
 [project.optional-dependencies]
