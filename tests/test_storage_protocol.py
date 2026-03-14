@@ -34,8 +34,21 @@ class MockStorageBackend:
     async def get_latest(self, source: str | None = None, n: int = 20) -> list[dict]:
         return []
 
-    async def count(self, source: str | None = None, category: str | None = None) -> int:
+    async def count(
+        self,
+        source: str | None = None,
+        category: str | None = None,
+        keyword: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> int:
         return 0
+
+    async def get_sources_summary(self) -> list[dict]:
+        return []
+
+    async def get_stats(self, days: int = 7) -> dict:
+        return {"total": 0, "by_source": [], "by_category": [], "by_date": []}
 
 
 class TestStorageBackendProtocol:

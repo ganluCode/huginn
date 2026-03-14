@@ -488,7 +488,8 @@ class PostgresBackend:
             包含 total（int）、by_source（list）、by_category（list）、by_date（list）的字典
         """
         from datetime import timedelta
-        from sqlalchemy import and_, func, select
+
+        from sqlalchemy import func, select
 
         async with self._session_factory() as session:
             try:

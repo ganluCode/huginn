@@ -11,7 +11,7 @@ from io import StringIO
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict
 
 from huginn.core.storage import PostgresBackend
 
