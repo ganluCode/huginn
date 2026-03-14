@@ -5,12 +5,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from huginn.api.deps import get_db_session
-from huginn.api.schemas import SpiderItem, SpiderListResponse
+from huginn.api.schemas import SpiderDetail, SpiderItem, SpiderListResponse
 from huginn.core.models import SpiderRegistry
 
 __all__ = ["router"]
@@ -60,3 +60,42 @@ async def list_spiders(
     items = [SpiderItem.model_validate(spider) for spider in spiders]
 
     return SpiderListResponse(items=items, total=len(items))
+
+
+@router.get("/spiders/{name}", response_model=SpiderDetail)
+async def get_spider_detail(
+    name: str,
+    db_session: AsyncSession | None = Depends(get_db_session),
+) -> SpiderDetail:
+    """获取 Spider 详情
+
+    根据 Spider 名称查询详情，包含 config 字段。
+
+    Args:
+        name: Spider 名称
+        db_session: 数据库 session（依赖注入）
+
+    Returns:
+        SpiderDetail: Spider 详情（包含 config 字段）
+
+    Raises:
+        HTTPException: Spider 不存在时返回 404
+    """
+    if db_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Spider '{name}' not found",
+        )
+
+    # 查询 Spider
+    query = select(SpiderRegistry).where(SpiderRegistry.name == name)
+    result = await db_session.execute(query)
+    spider = result.scalar_one_or_none()
+
+    if spider is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Spider '{name}' not found",
+        )
+
+    return SpiderDetail.model_validate(spider)

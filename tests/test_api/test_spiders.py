@@ -267,3 +267,108 @@ class TestSpiderListEndpoint:
         data = response.json()
         assert len(data["items"]) == 0
         assert data["total"] == 0
+
+
+class TestSpiderDetailEndpoint:
+    """测试 GET /api/spiders/{name} 端点"""
+
+    @pytest.mark.asyncio
+    async def test_spider_detail_returns_200_with_config(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry]
+    ):
+        """GET /api/spiders/hackernews 返回 200，body 含 config 字段"""
+        response = await client.get("/api/spiders/hackernews")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        # 验证包含 SpiderDetail 的所有字段（包括 config）
+        assert "name" in data
+        assert data["name"] == "hackernews"
+        assert "config" in data
+        assert data["config"] == {"url": "https://hacker-news.firebaseio.com/v0/topstories.json"}
+        # 验证其他基本字段
+        assert "engine" in data
+        assert "category" in data
+        assert "schedule" in data
+        assert "enabled" in data
+        assert "last_run_at" in data
+        assert "last_status" in data
+        assert "item_count" in data
+        assert "created_at" in data
+
+    @pytest.mark.asyncio
+    async def test_spider_detail_not_found_returns_404(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry]
+    ):
+        """GET /api/spiders/nonexistent 返回 404"""
+        response = await client.get("/api/spiders/nonexistent")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+        data = response.json()
+        assert "detail" in data
+        assert data["detail"] == "Spider 'nonexistent' not found"
+
+    @pytest.mark.asyncio
+    async def test_spider_detail_datetime_format_utc(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry]
+    ):
+        """响应中 last_run_at 为 ISO 8601 UTC 格式（带 Z 后缀）或 null"""
+        response = await client.get("/api/spiders/hackernews")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        # last_run_at 应该是 ISO 8601 UTC 格式（带 Z 后缀）
+        last_run_at = data.get("last_run_at")
+        if last_run_at is not None:
+            assert isinstance(last_run_at, str)
+            assert last_run_at.endswith("Z")
+
+        # created_at 也应该是 ISO 8601 UTC 格式
+        created_at = data.get("created_at")
+        assert isinstance(created_at, str)
+        assert created_at.endswith("Z")
+
+    @pytest.mark.asyncio
+    async def test_spider_detail_all_fields_present(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry]
+    ):
+        """验证 SpiderDetail 包含所有必需字段"""
+        response = await client.get("/api/spiders/github_trending")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        # 验证 SpiderItem 的所有字段
+        assert data["name"] == "github_trending"
+        assert data["engine"] == "scrapy"
+        assert data["category"] == "tech"
+        assert data["schedule"] == "0 */6 * * *"
+        assert data["enabled"] is False
+        assert "last_run_at" in data
+        assert data["last_status"] == "success"
+        assert data["item_count"] == 25
+        assert "created_at" in data
+        # 验证 SpiderDetail 特有的 config 字段
+        assert "config" in data
+        assert data["config"] == {"url": "https://github.com/trending"}
+
+    @pytest.mark.asyncio
+    async def test_spider_detail_null_config(
+        self, client: AsyncClient, test_session: AsyncSession
+    ):
+        """测试 config 为 null 的情况"""
+        # 创建一个 config 为 None 的 Spider
+        spider = SpiderRegistry(
+            name="no_config_spider",
+            engine="scrapy",
+            category="test",
+            enabled=True,
+            config=None,
+        )
+        test_session.add(spider)
+        await test_session.flush()
+
+        response = await client.get("/api/spiders/no_config_spider")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert data["config"] is None
