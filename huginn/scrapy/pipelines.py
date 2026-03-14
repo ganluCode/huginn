@@ -10,13 +10,21 @@ Pipelines:
 """
 
 import logging
+from datetime import datetime, timezone
 
 from scrapy.exceptions import DropItem
 from scrapy.spiders import Spider
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
 
+from huginn.core.db import SyncSessionLocal
 from huginn.core.items import CollectedItem
+from huginn.core.models import SpiderRegistry, SpiderRun
 from huginn.core.pipelines.clean import CleanPipeline
 from huginn.core.pipelines.dedup import DedupPipeline
+from huginn.core.pipelines.storage import StoragePipeline
+from huginn.core.storage import PostgresBackend
 
 logger = logging.getLogger(__name__)
 
@@ -222,20 +230,100 @@ class StorageScrapyPipeline:
     Bridges Scrapy items to the core StoragePipeline. Persists items
     to the database and tracks spider runs.
 
-    This is a placeholder for F-006 implementation.
+    Manages the spider lifecycle:
+    - open_spider: Creates DB session, inserts spider_runs record, registers spider
+    - process_item: Counts items for tracking
+    - close_spider: Updates spider_runs and spider_registry, detects errors
     """
+
+    def __init__(self):
+        """Initialize the pipeline."""
+        self.db_session: Session | None = None
+        self.storage_pipeline: StoragePipeline | None = None
+        self._run_id: int | None = None
+        self._item_count: int = 0
+        self._started_at: datetime | None = None
 
     def open_spider(self, spider: Spider) -> None:
         """Initialize database connection and tracking when spider opens.
 
+        Creates a synchronous DB session, initializes the core StoragePipeline,
+        inserts a spider_runs record with status='running', and auto-registers
+        the spider in spider_registry if it doesn't exist.
+
         Args:
             spider: The Scrapy spider instance.
         """
-        # TODO: Implement in F-006
-        pass
+        # Create synchronous DB session
+        self.db_session = SyncSessionLocal()
+        logger.info("StorageScrapyPipeline opened DB session for spider: %s", spider.name)
+
+        # Initialize core StoragePipeline with PostgresBackend
+        # Note: We create a backend that uses sync session internally
+        backend = _SyncPostgresBackend(self.db_session)
+        self.storage_pipeline = StoragePipeline(backend)
+
+        # Record start time
+        self._started_at = datetime.now(timezone.utc)
+        self._item_count = 0
+
+        # Auto-register spider in spider_registry if not exists
+        self._ensure_spider_registered(spider)
+
+        # Insert spider_runs record with status='running'
+        run = SpiderRun(
+            spider_name=spider.name,
+            started_at=self._started_at,
+            status="running",
+            item_count=0,
+        )
+        self.db_session.add(run)
+        self.db_session.flush()  # Get the ID without committing
+        self._run_id = run.id
+
+        logger.info("Started spider run: spider=%s, run_id=%s", spider.name, self._run_id)
+
+    def _ensure_spider_registered(self, spider: Spider) -> None:
+        """Ensure spider is registered in spider_registry.
+
+        If the spider doesn't exist in spider_registry, insert a new record
+        with engine='scrapy', category=spider.source_category, enabled=True.
+
+        Args:
+            spider: The Scrapy spider instance.
+        """
+        if self.db_session is None:
+            logger.warning("DB session not available, skipping spider registration")
+            return
+
+        # Check if spider exists
+        existing = self.db_session.query(SpiderRegistry).filter_by(name=spider.name).first()
+
+        if existing is None:
+            # Auto-register the spider
+            category = getattr(spider, "source_category", "unknown")
+            registry = SpiderRegistry(
+                name=spider.name,
+                engine="scrapy",
+                category=category,
+                enabled=True,
+                item_count=0,
+            )
+            self.db_session.add(registry)
+            self.db_session.flush()
+            logger.info(
+                "Auto-registered spider: name=%s, category=%s, engine=scrapy",
+                spider.name,
+                category,
+            )
+        else:
+            logger.debug("Spider already registered: %s", spider.name)
 
     def process_item(self, item: dict, spider: Spider) -> dict:  # noqa: ARG002
-        """Store item to database.
+        """Store item to database and count items.
+
+        Delegates the actual storage to the core StoragePipeline (which saves
+        items in batches). This method mainly counts items for tracking.
 
         Args:
             item: The Scrapy item with _huginn_collected_item.
@@ -244,14 +332,155 @@ class StorageScrapyPipeline:
         Returns:
             The item.
         """
-        # TODO: Implement in F-006
+        # Increment item count for tracking
+        self._item_count += 1
+
+        # Get the CollectedItem from previous pipeline
+        collected_item = item.get("_huginn_collected_item")
+        if collected_item is None:
+            logger.warning("No _huginn_collected_item found, skipping storage")
+            return item
+
+        # Store using core StoragePipeline
+        if self.storage_pipeline is not None:
+            try:
+                self.storage_pipeline.process(collected_item)
+            except Exception as e:
+                logger.error("Failed to store item: %s", e)
+                # Re-raise to let Scrapy handle the error
+                raise
+
         return item
 
     def close_spider(self, spider: Spider) -> None:
         """Update run status and close database connection.
 
+        Updates the spider_runs record with finished_at, status, item_count,
+        and duration_ms. Also updates spider_registry with last_run_at,
+        last_status, and accumulates item_count.
+
+        If there were ERROR logs during the run (detected via stats),
+        sets status to 'failed' and records error_message.
+
         Args:
             spider: The Scrapy spider instance.
         """
-        # TODO: Implement in F-006
-        pass
+        if self.db_session is None:
+            logger.warning("DB session not available, skipping cleanup")
+            return
+
+        # Calculate duration
+        finished_at = datetime.now(timezone.utc)
+        duration_ms = 0
+        if self._started_at is not None:
+            duration_ms = int((finished_at - self._started_at).total_seconds() * 1000)
+
+        # Check for ERROR logs in stats
+        stats = spider.crawler.stats.get_stats()
+        error_count = stats.get("log_count/ERROR", 0)
+
+        # Determine status and error message
+        status = "success"
+        error_message = None
+
+        if error_count > 0:
+            status = "failed"
+            error_message = f"Spider encountered {error_count} error(s) during execution"
+            logger.warning("Spider run had errors: %s", error_message)
+
+        # Update spider_runs record
+        if self._run_id is not None:
+            run = self.db_session.query(SpiderRun).filter_by(id=self._run_id).first()
+            if run is not None:
+                run.finished_at = finished_at
+                run.status = status
+                run.item_count = self._item_count
+                run.duration_ms = duration_ms
+                run.error_message = error_message
+
+        # Update spider_registry
+        registry = self.db_session.query(SpiderRegistry).filter_by(name=spider.name).first()
+        if registry is not None:
+            registry.last_run_at = finished_at
+            registry.last_status = status
+            # Accumulate item count (not replace)
+            registry.item_count = (registry.item_count or 0) + self._item_count
+
+        # Commit all changes
+        try:
+            self.db_session.commit()
+            logger.info(
+                "Finished spider run: spider=%s, run_id=%s, status=%s, items=%d, duration_ms=%d",
+                spider.name,
+                self._run_id,
+                status,
+                self._item_count,
+                duration_ms,
+            )
+        except Exception as e:
+            self.db_session.rollback()
+            logger.error("Failed to commit spider run updates: %s", e)
+        finally:
+            # Close DB session
+            self.db_session.close()
+            self.db_session = None
+            self.storage_pipeline = None
+
+
+class _SyncPostgresBackend:
+    """Synchronous PostgresBackend wrapper for StoragePipeline.
+
+    The core StoragePipeline expects an async backend, but in Scrapy pipelines
+    we need to work with synchronous sessions. This adapter wraps the sync session
+    and provides a synchronous save_items method.
+
+    This is an internal adapter class used only by StorageScrapyPipeline.
+    """
+
+    def __init__(self, session: Session):
+        """Initialize the sync backend.
+
+        Args:
+            session: SQLAlchemy synchronous session.
+        """
+        self._session = session
+
+    def save_items(self, source: str, category: str, items: list[dict]) -> int:
+        """Synchronously save items to the database.
+
+        Args:
+            source: Data source identifier.
+            category: Data category.
+            items: List of item data dictionaries.
+
+        Returns:
+            Number of items saved.
+        """
+        from huginn.core.models import CollectedData
+
+        if not items:
+            return 0
+
+        try:
+            # Build records for batch insert
+            records = [
+                {
+                    "source": source,
+                    "category": category,
+                    "data": item,
+                    "collected_at": datetime.now(timezone.utc),
+                }
+                for item in items
+            ]
+
+            # Execute bulk insert
+            self._session.execute(pg_insert(CollectedData).returning(CollectedData.id), records)
+            self._session.commit()
+
+            logger.debug("Saved %d items for source=%s", len(items), source)
+            return len(items)
+
+        except Exception as e:
+            self._session.rollback()
+            logger.error("Failed to save items for source=%s: %s", source, e)
+            raise
