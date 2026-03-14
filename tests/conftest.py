@@ -33,7 +33,7 @@ def create_tables(sync_engine):
 
 
 @pytest.fixture(scope="function")
-def db_session(sync_engine, _create_tables) -> Generator[Session, None, None]:
+def db_session(sync_engine, create_tables) -> Generator[Session, None, None]:
     """为每个测试函数创建独立的数据库会话
 
     每个测试在事务中运行，测试后回滚，保证测试间隔离
