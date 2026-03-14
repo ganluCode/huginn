@@ -17,24 +17,30 @@ __all__ = ["get_db_session", "get_redis"]
 _redis_client: Redis | None = None
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_db_session() -> AsyncGenerator[AsyncSession | None, None]:
     """获取异步数据库 session 的依赖注入函数
 
     通过 FastAPI 的 Depends() 使用，每次请求创建一个新的 session。
     请求结束后自动关闭 session，防止连接泄漏。
+    如果数据库连接失败，返回 None（降级处理）。
 
     Yields:
-        AsyncSession: SQLAlchemy 异步 session
+        AsyncSession | None: SQLAlchemy 异步 session，连接失败时为 None
 
     Example:
         from fastapi import Depends
 
         async def my_endpoint(session: AsyncSession = Depends(get_db_session)):
-            result = await session.execute(...)
+            if session:
+                result = await session.execute(...)
     """
-    async with AsyncSessionLocal() as session:
-        yield session
-        # 退出 context manager 时，session 会自动关闭
+    try:
+        async with AsyncSessionLocal() as session:
+            yield session
+            # 退出 context manager 时，session 会自动关闭
+    except Exception:
+        # 数据库连接失败，yield None 表示降级
+        yield None
 
 
 async def get_redis() -> Redis | None:

@@ -4,10 +4,12 @@
 """
 
 from collections.abc import Generator
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from huginn.api.main import app
 from huginn.core.exceptions import HuginnError, StorageError
@@ -38,6 +40,84 @@ class TestHealthEndpoint:
         assert response.status_code == status.HTTP_200_OK
         # 响应应该包含数据（即使是最简单的占位响应）
         assert response.json() is not None
+
+    def test_health_response_format(self, client: TestClient):
+        """健康检查返回正确格式：status、postgres、redis 字段"""
+        response = client.get("/api/health")
+        assert response.status_code == status.HTTP_200_OK
+
+        data = response.json()
+        assert "status" in data
+        assert "postgres" in data
+        assert "redis" in data
+        assert data["status"] == "ok"
+        assert isinstance(data["postgres"], bool)
+        assert isinstance(data["redis"], bool)
+
+    @patch("huginn.api.deps.AsyncSessionLocal")
+    @patch("huginn.api.deps.Redis")
+    def test_health_when_postgres_unavailable(
+        self, mock_redis: MagicMock, mock_session_local: MagicMock, client: TestClient
+    ):
+        """PG 不可用时响应 postgres=false 且 status 仍为 ok"""
+        # Mock PG session 抛出异常
+        mock_session = AsyncMock()
+        mock_session.__aenter__.side_effect = Exception("PG connection failed")
+        mock_session_local.return_value = mock_session
+
+        # Mock Redis 正常
+        mock_redis_inst = MagicMock()
+        mock_redis_inst.ping.return_value = True
+        mock_redis.from_url.return_value = mock_redis_inst
+
+        # 清除 Redis 客户端缓存（模拟重新连接）
+        import huginn.api.deps as deps_module
+        deps_module._redis_client = None
+
+        # 使用新的 TestClient 实例，确保 patch 生效
+        with TestClient(app) as test_client:
+            response = test_client.get("/api/health")
+            assert response.status_code == status.HTTP_200_OK
+
+            data = response.json()
+            assert data["status"] == "ok"
+            assert data["postgres"] is False
+            # Redis 应该正常
+            assert isinstance(data["redis"], bool)
+
+    @patch("huginn.api.deps.AsyncSessionLocal")
+    @patch("huginn.api.deps.Redis")
+    def test_health_when_redis_unavailable(
+        self, mock_redis: MagicMock, mock_session_local: MagicMock, client: TestClient
+    ):
+        """Redis 不可用时响应 redis=false 且 status 仍为 ok"""
+        # Mock Redis 抛出异常
+        mock_redis.from_url.side_effect = Exception("Redis connection failed")
+
+        # Mock PG 正常
+        mock_session = AsyncMock()
+        mock_session.__aenter__.return_value = mock_session
+        mock_session.__aexit__.return_value = None
+        # 模拟成功的 SELECT 1 查询
+        mock_result = MagicMock()
+        mock_result.scalar_one.return_value = 1
+        mock_session.execute.return_value = mock_result
+        mock_session_local.return_value = mock_session
+
+        # 清除 Redis 客户端缓存（模拟重新连接）
+        import huginn.api.deps as deps_module
+        deps_module._redis_client = None
+
+        # 使用新的 TestClient 实例，确保 patch 生效
+        with TestClient(app) as test_client:
+            response = test_client.get("/api/health")
+            assert response.status_code == status.HTTP_200_OK
+
+            data = response.json()
+            assert data["status"] == "ok"
+            assert data["redis"] is False
+            # PG 应该正常
+            assert isinstance(data["postgres"], bool)
 
 
 class TestCORSMiddleware:

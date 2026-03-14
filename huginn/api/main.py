@@ -3,10 +3,14 @@
 创建并配置 FastAPI 应用实例。
 """
 
-from fastapi import APIRouter, FastAPI, Request, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
+from huginn.api.deps import get_db_session, get_redis
 from huginn.core.exceptions import HuginnError
 
 __all__ = ["app"]
@@ -46,13 +50,50 @@ api_router = APIRouter()
 
 
 @api_router.get("/health")
-async def health_check():
+async def health_check(
+    db_session=Depends(get_db_session),
+    redis=Depends(get_redis),
+):
     """健康检查端点
 
-    返回基本的健康状态，用于验证服务是否正常运行。
-    后续可以扩展为检查数据库、Redis 等依赖服务的状态。
+    检查 PostgreSQL 和 Redis 连接状态，返回服务健康状态。
+    即使某个依赖服务不可用，接口仍返回 200 和 status=ok，
+    但会在响应中标注具体服务的状态。
+
+    Returns:
+        dict: 包含 status、postgres、redis 三个字段的响应
+
+    Response example:
+        {
+            "status": "ok",
+            "postgres": true,
+            "redis": true
+        }
     """
-    return {"status": "ok"}
+    postgres_ok = False
+    redis_ok = False
+
+    # 检查 PostgreSQL 连接
+    try:
+        result = await db_session.execute(text("SELECT 1"))
+        result.scalar_one()
+        postgres_ok = True
+    except Exception:
+        postgres_ok = False
+
+    # 检查 Redis 连接
+    if redis is not None:
+        try:
+            redis.ping()
+            redis_ok = True
+        except Exception:
+            redis_ok = False
+
+    return {
+        "status": "ok",
+        "postgres": postgres_ok,
+        "redis": redis_ok,
+    }
 
 
 # 将 API 路由挂载到 /api 前缀
