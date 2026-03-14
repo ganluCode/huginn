@@ -6,8 +6,8 @@
 3. 运行 Alembic 迁移
 """
 
-import sys
 import subprocess
+import sys
 
 from huginn.core.config import settings
 
@@ -19,7 +19,7 @@ def check_postgresql() -> bool:
         conn = psycopg2.connect(settings.database_url_sync)
         cursor = conn.cursor()
         cursor.execute("SELECT version()")
-        version = cursor.fetchone()[0]
+        _ = cursor.fetchone()[0]  # 仅验证连接，不使用结果
         cursor.close()
         conn.close()
 
@@ -69,7 +69,7 @@ def run_migrations() -> bool:
         # 获取表列表
         from huginn.core.models import Base
         tables = sorted(Base.metadata.tables.keys())
-        print(f"✓ Database migrated")
+        print("✓ Database migrated")
         print(f"  Tables: {', '.join(tables)}")
         return True
     except Exception as e:

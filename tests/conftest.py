@@ -1,13 +1,13 @@
 """Pytest 配置和共享 fixtures"""
 
 import os
+from collections.abc import Generator
+
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from typing import Generator
+from sqlalchemy.orm import Session
 
 from huginn.core.models import Base
-
 
 # 从环境变量获取同步数据库 URL
 DATABASE_URL_SYNC = os.getenv(
@@ -33,7 +33,7 @@ def create_tables(sync_engine):
 
 
 @pytest.fixture(scope="function")
-def db_session(sync_engine, create_tables) -> Generator[Session, None, None]:
+def db_session(sync_engine, _create_tables) -> Generator[Session, None, None]:
     """为每个测试函数创建独立的数据库会话
 
     每个测试在事务中运行，测试后回滚，保证测试间隔离

@@ -1,8 +1,10 @@
 """Alembic 环境配置"""
 
+import os
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
+
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # 导入 Base metadata
 from huginn.core.models import Base
@@ -19,7 +21,6 @@ target_metadata = Base.metadata
 
 # 从环境变量获取数据库 URL
 # 这里优先使用环境变量，回退到 alembic.ini 中的配置
-import os
 if os.getenv("DATABASE_URL_SYNC"):
     config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL_SYNC"))
 
