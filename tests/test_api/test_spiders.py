@@ -372,3 +372,147 @@ class TestSpiderDetailEndpoint:
 
         data = response.json()
         assert data["config"] is None
+
+
+class TestSpiderRunEndpoint:
+    """测试 POST /api/spiders/{name}/run 端点"""
+
+    @pytest.mark.asyncio
+    async def test_trigger_spider_run_returns_202_with_message_and_run_id(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession, mocker
+    ):
+        """POST /api/spiders/hackernews/run 返回 202，body 含 message 和 run_id"""
+        # Mock subprocess.Popen 避免真的启动 Scrapy 进程
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_process = mocker.MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
+
+        response = await client.post("/api/spiders/hackernews/run")
+        assert response.status_code == status.HTTP_202_ACCEPTED
+
+        data = response.json()
+        assert "message" in data
+        assert "run_id" in data
+        assert isinstance(data["run_id"], int)
+        assert "hackernews" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_trigger_nonexistent_spider_returns_404(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], mocker
+    ):
+        """POST /api/spiders/nonexistent/run 返回 404"""
+        mock_popen = mocker.patch("subprocess.Popen")
+
+        response = await client.post("/api/spiders/nonexistent/run")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+        data = response.json()
+        assert "detail" in data
+        assert data["detail"] == "Spider 'nonexistent' not found"
+
+        # 确保没有启动进程
+        mock_popen.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_trigger_running_spider_returns_409(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession, mocker
+    ):
+        """Spider 正在运行时 POST /api/spiders/{name}/run 返回 409"""
+        from huginn.core.models import SpiderRun
+
+        mock_popen = mocker.patch("subprocess.Popen")
+
+        # 创建一个正在运行的记录
+        running_run = SpiderRun(
+            spider_name="hackernews",
+            started_at=datetime.now(timezone.utc),
+            status="running",
+        )
+        test_session.add(running_run)
+        await test_session.flush()
+
+        response = await client.post("/api/spiders/hackernews/run")
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+        data = response.json()
+        assert "detail" in data
+        assert data["detail"] == "Spider 'hackernews' is already running"
+
+        # 确保没有启动新进程
+        mock_popen.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_trigger_creates_spider_run_record_with_status_running(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession, mocker
+    ):
+        """spider_runs 表中创建了 status=running 的记录"""
+        from huginn.core.models import SpiderRun
+        from sqlalchemy import select
+
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_process = mocker.MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
+
+        # 触发运行
+        response = await client.post("/api/spiders/hackernews/run")
+        assert response.status_code == status.HTTP_202_ACCEPTED
+
+        run_id = response.json()["run_id"]
+
+        # 查询数据库中的运行记录
+        query = select(SpiderRun).where(SpiderRun.id == run_id)
+        result = await test_session.execute(query)
+        run = result.scalar_one_or_none()
+
+        assert run is not None
+        assert run.spider_name == "hackernews"
+        assert run.status == "running"
+        assert run.started_at is not None
+        assert run.finished_at is None
+
+    @pytest.mark.asyncio
+    async def test_trigger_returns_immediately_without_waiting(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession, mocker
+    ):
+        """接口立即返回，不等待采集完成"""
+        # Mock 一个"慢"进程，确保接口不会等待
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_process = mocker.MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
+
+        # 记录开始时间
+        import time
+        start = time.time()
+
+        response = await client.post("/api/spiders/hackernews/run")
+
+        elapsed = time.time() - start
+
+        # 接口应该立即返回（不超过 1 秒）
+        assert elapsed < 1.0
+        assert response.status_code == status.HTTP_202_ACCEPTED
+
+    @pytest.mark.asyncio
+    async def test_trigger_starts_scrapy_process(
+        self, client: AsyncClient, sample_spiders: list[SpiderRegistry], test_session: AsyncSession, mocker
+    ):
+        """验证调用 subprocess.Popen 启动 scrapy crawl {name}"""
+        mock_popen = mocker.patch("subprocess.Popen")
+        mock_process = mocker.MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
+
+        response = await client.post("/api/spiders/hackernews/run")
+        assert response.status_code == status.HTTP_202_ACCEPTED
+
+        # 验证 Popen 被正确调用
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args
+        # 检查命令包含 scrapy crawl hackernews
+        cmd = call_args[0][0] if call_args[0] else call_args[1].get("args")
+        assert "scrapy" in str(cmd)
+        assert "crawl" in str(cmd)
+        assert "hackernews" in str(cmd)
