@@ -1,0 +1,24 @@
+{
+  "normal": {
+    "id": 1001,
+    "title": "Show HN: I built a tool for data collection",
+    "url": "https://github.com/example/data-tool",
+    "score": 42,
+    "by": "developer123",
+    "descendants": 15
+  },
+  "missing_url": {
+    "id": 1002,
+    "title": "Ask HN: Best practices for API design?",
+    "score": 28,
+    "by": "api_designer",
+    "descendants": 8
+  },
+  "missing_descendants": {
+    "id": 1003,
+    "title": "Launch HN: New AI Coding Assistant",
+    "url": "https://ai-coder.dev",
+    "score": 156,
+    "by": "startup_founder"
+  }
+}
