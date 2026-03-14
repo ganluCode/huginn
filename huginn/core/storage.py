@@ -214,8 +214,72 @@ class PostgresBackend:
         Returns:
             查询结果列表，每项包含 id、source、category、collected_at、data 字段
         """
-        # TODO: 在 F-007 中实现
-        raise NotImplementedError("query method will be implemented in F-007")
+        from sqlalchemy import and_, or_, select
+
+        async with self._session_factory() as session:
+            try:
+                # 构建基础查询
+                stmt = select(CollectedData)
+
+                # 构建 WHERE 条件
+                conditions = []
+
+                if source is not None:
+                    conditions.append(CollectedData.source == source)
+
+                if category is not None:
+                    conditions.append(CollectedData.category == category)
+
+                if keyword is not None:
+                    # 使用参数化查询防止 SQL 注入
+                    # 搜索 data->>'title' (使用 .op('->>') 访问 JSONB 字段)
+                    # 和 data::text (将整个 JSONB 转为文本)
+                    keyword_pattern = f"%{keyword}%"
+
+                    # 使用 PostgreSQL 的 JSONB 操作符和文本转换
+                    # data->>'title' 创建一个文本提取表达式
+                    title_search = CollectedData.data.op("->>")("title").ilike(keyword_pattern)
+
+                    # data::text 将整个 JSONB 转为文本搜索
+                    full_text_search = CollectedData.data.astext.ilike(keyword_pattern)
+
+                    conditions.append(or_(title_search, full_text_search))
+
+                if time_from is not None:
+                    conditions.append(CollectedData.collected_at >= time_from)
+
+                if time_to is not None:
+                    conditions.append(CollectedData.collected_at <= time_to)
+
+                # 应用所有条件
+                if conditions:
+                    stmt = stmt.where(and_(*conditions))
+
+                # 排序：按 collected_at DESC
+                stmt = stmt.order_by(CollectedData.collected_at.desc())
+
+                # 分页
+                stmt = stmt.limit(limit).offset(offset)
+
+                # 执行查询
+                result = await session.execute(stmt)
+                rows = result.scalars().all()
+
+                # 转换为字典格式
+                return [
+                    {
+                        "id": row.id,
+                        "source": row.source,
+                        "category": row.category,
+                        "collected_at": row.collected_at.isoformat(),
+                        "data": row.data,
+                    }
+                    for row in rows
+                ]
+
+            except Exception as e:
+                logger.error(f"Failed to query data: {e}")
+                raise StorageError(f"Query failed: {str(e)}") from e
 
     async def get_latest(self, source: str | None = None, n: int = 20) -> list[dict]:
         """获取最新的采集数据

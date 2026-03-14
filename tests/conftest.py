@@ -46,8 +46,12 @@ async def async_engine() -> AsyncEngine:  # noqa: ARG001 (unused argument is fin
 
 
 @pytest.fixture(scope="session")
-def create_tables(sync_engine):
-    """在测试开始时创建所有表，结束时删除"""
+def _create_tables(sync_engine):
+    """在测试开始时创建所有表，结束时删除
+
+    名称以下划线开头，表示这是一个自动使用的 fixture，
+    会被 db_session 和 async_db_session 自动引用。
+    """
     Base.metadata.create_all(sync_engine)
     yield
     Base.metadata.drop_all(sync_engine)
