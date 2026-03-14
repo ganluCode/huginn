@@ -6,7 +6,12 @@ from collections.abc import AsyncGenerator, Generator
 import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session
 
 from huginn.core.models import Base
@@ -49,7 +54,7 @@ def create_tables(sync_engine):
 
 
 @pytest.fixture(scope="function")
-def db_session(sync_engine, create_tables) -> Generator[Session, None, None]:
+def db_session(sync_engine, _create_tables) -> Generator[Session, None, None]:
     """为每个测试函数创建独立的数据库会话
 
     每个测试在事务中运行，测试后回滚，保证测试间隔离
@@ -68,7 +73,7 @@ def db_session(sync_engine, create_tables) -> Generator[Session, None, None]:
 
 @pytest.fixture(scope="function")
 async def async_db_session(
-    async_engine: AsyncEngine, create_tables
+    async_engine: AsyncEngine, _create_tables
 ) -> AsyncGenerator[AsyncSession, None]:
     """为每个异步测试函数创建独立的数据库会话
 
@@ -80,8 +85,7 @@ async def async_db_session(
         expire_on_commit=False,
     )
 
-    async with async_session_maker() as session:
-        async with session.begin():
-            yield session
+    async with async_session_maker() as session, session.begin():
+        yield session
 
         # 测试结束后自动回滚（pytest-asyncio 会处理）

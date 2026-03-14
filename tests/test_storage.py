@@ -9,10 +9,8 @@
     docker compose up -d postgres
 """
 
-from datetime import UTC, datetime
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import text
 
 from huginn.core.exceptions import StorageError

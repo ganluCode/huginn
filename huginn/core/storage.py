@@ -13,14 +13,12 @@ import logging
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from huginn.core.db import AsyncSessionLocal, async_engine
+from huginn.core.db import async_engine
 from huginn.core.exceptions import StorageError
 from huginn.core.models import CollectedData
-
 
 logger = logging.getLogger(__name__)
 
