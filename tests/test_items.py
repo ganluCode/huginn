@@ -1,10 +1,8 @@
 """数据类测试：CollectedItem 和 CollectTask"""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import pytest
-
-from huginn.core.items import CollectTask, CollectedItem
+from huginn.core.items import CollectedItem, CollectTask
 
 
 class TestCollectedItem:
@@ -22,7 +20,7 @@ class TestCollectedItem:
         item = CollectedItem(source="test", category="tech", data={})
         assert isinstance(item.collected_at, datetime)
         assert item.collected_at.tzinfo is not None
-        assert item.collected_at.tzinfo == timezone.utc
+        assert item.collected_at.tzinfo == UTC
 
     def test_source_empty_string_allowed(self):
         """CollectedItem source 为空字符串时应允许创建"""
@@ -36,7 +34,7 @@ class TestCollectedItem:
 
     def test_collected_at_can_be_overridden(self):
         """CollectedItem collected_at 可以手动指定"""
-        custom_time = datetime(2026, 3, 14, 12, 0, 0, tzinfo=timezone.utc)
+        custom_time = datetime(2026, 3, 14, 12, 0, 0, tzinfo=UTC)
         item = CollectedItem(
             source="test", category="tech", data={}, collected_at=custom_time
         )
