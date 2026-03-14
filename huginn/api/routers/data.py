@@ -9,7 +9,7 @@ import json
 from datetime import UTC, datetime
 from io import StringIO
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_serializer
 
@@ -179,10 +179,22 @@ async def query_data(
     parsed_time_to: datetime | None = None
 
     if time_from is not None:
-        parsed_time_from = parse_datetime_iso(time_from)
+        try:
+            parsed_time_from = parse_datetime_iso(time_from)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e),
+            ) from e
 
     if time_to is not None:
-        parsed_time_to = parse_datetime_iso(time_to)
+        try:
+            parsed_time_to = parse_datetime_iso(time_to)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e),
+            ) from e
 
     # 创建存储后端
     backend = PostgresBackend()
@@ -291,17 +303,32 @@ async def export_data(
     """
     # 验证 format 参数
     if format not in ("csv", "json"):
-        raise ValueError(f"Invalid format: {format}. Must be 'csv' or 'json'")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid format: {format}. Must be 'csv' or 'json'",
+        )
 
     # 解析时间参数
     parsed_time_from: datetime | None = None
     parsed_time_to: datetime | None = None
 
     if time_from is not None:
-        parsed_time_from = parse_datetime_iso(time_from)
+        try:
+            parsed_time_from = parse_datetime_iso(time_from)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e),
+            ) from e
 
     if time_to is not None:
-        parsed_time_to = parse_datetime_iso(time_to)
+        try:
+            parsed_time_to = parse_datetime_iso(time_to)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e),
+            ) from e
 
     # 限制最大导出数量为 10000
     max_export_limit = 10000
@@ -323,7 +350,7 @@ async def export_data(
     # 根据 format 返回不同的响应
     if format == "csv":
         # CSV 格式
-        output = StringIO()
+        output = StringIO(newline="")
 
         def generate_csv():
             """生成 CSV 内容的生成器"""
