@@ -117,7 +117,7 @@ URLLENGTH_LIMIT = 2083
 
 # Referer settings
 REFERER_ENABLED = True
-REFERRER_POLICY = "scrapy.spidermiddlewares.referer.DefaultRefererPolicy"
+REFERRER_POLICY = "scrapy.spidermiddlewares.referer.DefaultReferrerPolicy"
 
 
 # Redirect settings
@@ -152,3 +152,7 @@ DNS_TIMEOUT = 60
 # Logging
 LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 LOG_DATEFORMAT = "%Y-%m-%d %H:%M:%S"
+
+# Redis URL (read from huginn config, which loads .env)
+from huginn.core.config import settings as _huginn_settings  # noqa: E402
+REDIS_URL = _huginn_settings.redis_url
