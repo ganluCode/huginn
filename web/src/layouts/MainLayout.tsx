@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, Link, useLocation } from 'react-router-dom'
+
+const navItems = [
+  { path: '/', label: 'Dashboard', icon: '📊' },
+  { path: '/spiders', label: 'Spiders', icon: '🕷️' },
+  { path: '/data', label: 'Data', icon: '📁' },
+  { path: '/settings', label: 'Settings', icon: '⚙️' },
+]
 
 export default function MainLayout() {
   const [isMobile, setIsMobile] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const location = useLocation()
 
   useEffect(() => {
     const checkMobile = () => {
@@ -27,6 +35,12 @@ export default function MainLayout() {
     setIsSidebarOpen(!isSidebarOpen)
   }
 
+  const handleNavClick = () => {
+    if (isMobile) {
+      setIsSidebarOpen(false)
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
@@ -39,9 +53,38 @@ export default function MainLayout() {
           ${!isMobile ? 'translate-x-0' : ''}
         `}
       >
-        <div className="p-4">
+        <div className="p-4 border-b border-gray-200">
           <h1 className="text-xl font-bold text-gray-800">Huginn</h1>
         </div>
+        <nav className="p-4">
+          <ul className="space-y-2">
+            {navItems.map((item) => {
+              const isActive = location.pathname === item.path
+              return (
+                <li key={item.path}>
+                  <Link
+                    to={item.path}
+                    onClick={handleNavClick}
+                    className={`
+                      flex items-center gap-3 px-3 py-2 rounded-lg
+                      transition-colors duration-200
+                      ${isActive
+                        ? 'bg-blue-50 text-blue-600 font-medium'
+                        : 'text-gray-700 hover:bg-gray-100'
+                      }
+                    `}
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    <span className="text-lg" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <span>{item.label}</span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
       </aside>
 
       {/* Hamburger menu button (mobile only) */}

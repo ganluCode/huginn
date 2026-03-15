@@ -1,16 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import MainLayout from './MainLayout'
 
 // Mock Outlet
 vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual('react-router-dom')
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
   return {
     ...actual,
     Outlet: () => <div data-testid="outlet">Outlet Content</div>,
   }
 })
+
+// Helper to render with Router
+function renderWithRouter(ui: React.ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 describe('MainLayout', () => {
   // Reset window.innerWidth before each test
@@ -35,27 +41,27 @@ describe('MainLayout', () => {
     })
 
     it('renders sidebar with fixed 240px width', () => {
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
       const sidebar = screen.getByTestId('sidebar')
       expect(sidebar).toBeInTheDocument()
       expect(sidebar).toHaveClass('w-60') // w-60 = 240px in Tailwind
     })
 
     it('renders content area that takes remaining width', () => {
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
       const content = screen.getByTestId('content-area')
       expect(content).toBeInTheDocument()
       expect(content).toHaveClass('flex-1') // flex-1 = takes remaining space
     })
 
     it('hides hamburger menu button on desktop', () => {
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
       const hamburgerButton = screen.queryByTestId('hamburger-button')
       expect(hamburgerButton).not.toBeInTheDocument()
     })
 
     it('shows sidebar by default on desktop', () => {
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
       const sidebar = screen.getByTestId('sidebar')
       expect(sidebar).not.toHaveClass('-translate-x-full')
     })
@@ -73,20 +79,20 @@ describe('MainLayout', () => {
     })
 
     it('shows hamburger menu button on mobile', () => {
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
       const hamburgerButton = screen.queryByTestId('hamburger-button')
       expect(hamburgerButton).toBeInTheDocument()
     })
 
     it('hides sidebar by default on mobile', () => {
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
       const sidebar = screen.getByTestId('sidebar')
       expect(sidebar).toHaveClass('-translate-x-full')
     })
 
     it('toggles sidebar visibility when hamburger button is clicked', async () => {
       const user = userEvent.setup()
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
 
       const sidebar = screen.getByTestId('sidebar')
       const hamburgerButton = screen.getByTestId('hamburger-button')
@@ -106,7 +112,7 @@ describe('MainLayout', () => {
 
   describe('Content area', () => {
     it('renders React Router Outlet in content area', () => {
-      render(<MainLayout />)
+      renderWithRouter(<MainLayout />)
       const outlet = screen.getByTestId('outlet')
       expect(outlet).toBeInTheDocument()
       expect(outlet).toHaveTextContent('Outlet Content')
