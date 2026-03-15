@@ -36,6 +36,8 @@ class StorageBackend(Protocol):
         query: 按条件查询采集数据，支持多条件过滤和分页
         get_latest: 获取最新的 N 条数据
         count: 统计符合条件的记录数
+        get_sources_summary: 获取按 source 分组的总数和最新时间
+        get_stats: 获取按 source、category、date 的分组统计
     """
 
     async def save_items(self, source: str, category: str, items: list[dict]) -> int:
@@ -92,15 +94,44 @@ class StorageBackend(Protocol):
         """
         ...
 
-    async def count(self, source: str | None = None, category: str | None = None) -> int:
+    async def count(
+        self,
+        source: str | None = None,
+        category: str | None = None,
+        keyword: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> int:
         """统计符合条件的记录数
 
         Args:
             source: 按数据源过滤，None 表示不过滤
             category: 按分类过滤，None 表示不过滤
+            keyword: 关键词搜索，None 表示不过滤
+            time_from: 起始时间，None 表示不过滤
+            time_to: 结束时间，None 表示不过滤
 
         Returns:
             符合条件的记录总数
+        """
+        ...
+
+    async def get_sources_summary(self) -> list[dict]:
+        """获取按 source 分组的总数和最新时间
+
+        Returns:
+            每项包含 source、category、total_count、latest_at 的字典列表，按 total_count DESC 排序
+        """
+        ...
+
+    async def get_stats(self, days: int = 7) -> dict:
+        """获取按 source、category、date 的分组统计
+
+        Args:
+            days: 统计最近几天数据，0 表示仅统计今天
+
+        Returns:
+            包含 total（int）、by_source（list）、by_category（list）、by_date（list）的字典
         """
         ...
 
@@ -302,7 +333,7 @@ class PostgresBackend:
         Returns:
             最新的 n 条数据，按 collected_at 降序排列
         """
-        from sqlalchemy import and_, func, select
+        from sqlalchemy import select
 
         async with self._session_factory() as session:
             try:
@@ -339,17 +370,27 @@ class PostgresBackend:
                 logger.error(f"Failed to get latest data: {e}")
                 raise StorageError(f"Get latest failed: {str(e)}") from e
 
-    async def count(self, source: str | None = None, category: str | None = None) -> int:
+    async def count(
+        self,
+        source: str | None = None,
+        category: str | None = None,
+        keyword: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> int:
         """统计符合条件的记录数
 
         Args:
             source: 按数据源过滤，None 表示不过滤
             category: 按分类过滤，None 表示不过滤
+            keyword: 关键词搜索，None 表示不过滤
+            time_from: 起始时间，None 表示不过滤
+            time_to: 结束时间，None 表示不过滤
 
         Returns:
             符合条件的记录总数
         """
-        from sqlalchemy import and_, func, select
+        from sqlalchemy import and_, func, or_, select
 
         async with self._session_factory() as session:
             try:
@@ -365,6 +406,25 @@ class PostgresBackend:
                 if category is not None:
                     conditions.append(CollectedData.category == category)
 
+                if keyword is not None:
+                    # 转义 LIKE 特殊字符，防止 SQL 注入
+                    escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                    keyword_pattern = f"%{escaped}%"
+
+                    # data->>'title' ILIKE
+                    title_search = CollectedData.data.op("->>")("title").ilike(keyword_pattern)
+
+                    # data::text ILIKE
+                    full_text_search = cast(CollectedData.data, String).ilike(keyword_pattern)
+
+                    conditions.append(or_(title_search, full_text_search))
+
+                if time_from is not None:
+                    conditions.append(CollectedData.collected_at >= time_from)
+
+                if time_to is not None:
+                    conditions.append(CollectedData.collected_at <= time_to)
+
                 # 应用所有条件
                 if conditions:
                     stmt = stmt.where(and_(*conditions))
@@ -378,3 +438,134 @@ class PostgresBackend:
             except Exception as e:
                 logger.error(f"Failed to count data: {e}")
                 raise StorageError(f"Count failed: {str(e)}") from e
+
+    async def get_sources_summary(self) -> list[dict]:
+        """获取按 source 分组的总数和最新时间
+
+        Returns:
+            每项包含 source、category、total_count、latest_at 的字典列表，按 total_count DESC 排序
+        """
+        from sqlalchemy import func, select
+
+        async with self._session_factory() as session:
+            try:
+                # 使用聚合查询按 source 分组统计
+                stmt = (
+                    select(
+                        CollectedData.source,
+                        CollectedData.category,
+                        func.count(CollectedData.id).label("total_count"),
+                        func.max(CollectedData.collected_at).label("latest_at"),
+                    )
+                    .group_by(CollectedData.source, CollectedData.category)
+                    .order_by(func.count(CollectedData.id).desc())
+                )
+
+                result = await session.execute(stmt)
+                rows = result.all()
+
+                return [
+                    {
+                        "source": row.source,
+                        "category": row.category,
+                        "total_count": row.total_count,
+                        "latest_at": row.latest_at.isoformat() if row.latest_at else None,
+                    }
+                    for row in rows
+                ]
+
+            except Exception as e:
+                logger.error(f"Failed to get sources summary: {e}")
+                raise StorageError(f"Get sources summary failed: {str(e)}") from e
+
+    async def get_stats(self, days: int = 7) -> dict:
+        """获取按 source、category、date 的分组统计
+
+        Args:
+            days: 统计最近几天数据，0 表示仅统计今天
+
+        Returns:
+            包含 total（int）、by_source（list）、by_category（list）、by_date（list）的字典
+        """
+        from datetime import timedelta
+
+        from sqlalchemy import func, select
+
+        async with self._session_factory() as session:
+            try:
+                # 计算时间范围
+                now = datetime.now()
+                if days == 0:
+                    # 今天 0 点至今
+                    time_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                else:
+                    # 最近 N 天
+                    time_from = now - timedelta(days=days)
+
+                # 构建 WHERE 条件
+                time_condition = CollectedData.collected_at >= time_from
+
+                # 使用 CTE 一次性获取所有统计，避免 N+1
+                # 按来源统计
+                by_source_stmt = (
+                    select(
+                        CollectedData.source.label("source"),
+                        func.count(CollectedData.id).label("count"),
+                    )
+                    .where(time_condition)
+                    .group_by(CollectedData.source)
+                    .order_by(func.count(CollectedData.id).desc())
+                )
+
+                # 按分类统计
+                by_category_stmt = (
+                    select(
+                        CollectedData.category.label("category"),
+                        func.count(CollectedData.id).label("count"),
+                    )
+                    .where(time_condition)
+                    .group_by(CollectedData.category)
+                    .order_by(func.count(CollectedData.id).desc())
+                )
+
+                # 按日期统计（使用 DATE_TRUNC 按天分组）
+                by_date_stmt = (
+                    select(
+                        func.date(CollectedData.collected_at).label("date"),
+                        func.count(CollectedData.id).label("count"),
+                    )
+                    .where(time_condition)
+                    .group_by(func.date(CollectedData.collected_at))
+                    .order_by(func.date(CollectedData.collected_at).desc())
+                )
+
+                # 总数统计
+                total_stmt = select(func.count(CollectedData.id)).where(time_condition)
+
+                # 并行执行所有查询
+                total_result = await session.execute(total_stmt)
+                total = int(total_result.scalar_one() or 0)
+
+                by_source_result = await session.execute(by_source_stmt)
+                by_source = [{"source": row.source, "count": row.count} for row in by_source_result.all()]
+
+                by_category_result = await session.execute(by_category_stmt)
+                by_category = [
+                    {"category": row.category, "count": row.count} for row in by_category_result.all()
+                ]
+
+                by_date_result = await session.execute(by_date_stmt)
+                by_date = [
+                    {"date": row.date.isoformat(), "count": row.count} for row in by_date_result.all()
+                ]
+
+                return {
+                    "total": total,
+                    "by_source": by_source,
+                    "by_category": by_category,
+                    "by_date": by_date,
+                }
+
+            except Exception as e:
+                logger.error(f"Failed to get stats: {e}")
+                raise StorageError(f"Get stats failed: {str(e)}") from e

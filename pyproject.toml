@@ -8,12 +8,16 @@ license = "MIT"
 authors = []
 
 dependencies = [
+    "scrapy>=2.11",
     "sqlalchemy[asyncio]>=2.0",
     "alembic",
     "pydantic-settings",
     "asyncpg",
     "psycopg2-binary",
     "redis",
+    "fastapi>=0.110",
+    "uvicorn[standard]",
+    "httpx",
 ]
 
 [project.optional-dependencies]
