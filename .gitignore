@@ -206,3 +206,19 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Frontend (Web)
+web/node_modules/
+web/dist/
+web/.turbo/
+web/build/
+web/coverage/
+web/.env.local
+web/.env.*.local
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/pnpm-debug.log*
+web/package-lock.json
+web/yarn.lock
+web/pnpm-lock.yaml
