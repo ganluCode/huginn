@@ -11,15 +11,39 @@ import StatCard from '../components/StatCard'
 import SpiderStatusList from '../components/SpiderStatusList'
 import RecentDataFeed from '../components/RecentDataFeed'
 
-interface DashboardStats {
-  total_items: number
-  today_items: number
-  sources_count: number
-  active_spiders: number
+interface StatsBySource {
+  source: string
+  count: number
+}
+
+interface StatsByDate {
+  date: string
+  count: number
+}
+
+interface StatsResponse {
+  total: number
+  by_source: StatsBySource[]
+  by_category: { category: string; count: number }[]
+  by_date: StatsByDate[]
+}
+
+interface DataListResponse {
+  items: CollectedData[]
+  total: number
+  limit: number
+  offset: number
+}
+
+function getTodayCount(stats: StatsResponse | null): string {
+  if (!stats) return '—'
+  const today = new Date().toISOString().slice(0, 10)
+  const todayEntry = stats.by_date.find(d => d.date === today)
+  return (todayEntry?.count ?? 0).toLocaleString()
 }
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [stats, setStats] = useState<StatsResponse | null>(null)
   const [spiders, setSpiders] = useState<Spider[]>([])
   const [recentItems, setRecentItems] = useState<CollectedData[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,8 +51,8 @@ export default function Dashboard() {
 
   const fetchSpiders = useCallback(async () => {
     try {
-      const data = await apiClient.get<Spider[]>('/spiders')
-      setSpiders(data)
+      const resp = await apiClient.get<{ items: Spider[]; total: number }>('/spiders')
+      setSpiders(resp.items)
     } catch {
       // SpiderStatusList component handles empty state
     }
@@ -41,7 +65,7 @@ export default function Dashboard() {
       try {
         // Fetch stats
         try {
-          const data = await apiClient.get<DashboardStats>('/stats')
+          const data = await apiClient.get<StatsResponse>('/data/stats', { days: '7' })
           setStats(data)
           setStatsError(false)
         } catch {
@@ -53,8 +77,8 @@ export default function Dashboard() {
 
         // Fetch recent items
         try {
-          const data = await apiClient.get<CollectedData[]>('/data', { limit: '10' })
-          setRecentItems(data)
+          const resp = await apiClient.get<DataListResponse>('/data', { limit: '10' })
+          setRecentItems(resp.items)
         } catch {
           // RecentDataFeed component handles empty state
         }
@@ -87,11 +111,11 @@ export default function Dashboard() {
         <h2 id="stats-heading" className="sr-only">
           Statistics
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <StatCard
-              title="Total Items"
-              value={stats?.total_items.toLocaleString() ?? '—'}
+              title="Total Items (7d)"
+              value={stats?.total.toLocaleString() ?? '—'}
               loading={loading}
               error={statsError}
             />
@@ -99,7 +123,7 @@ export default function Dashboard() {
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <StatCard
               title="Today"
-              value={stats?.today_items.toLocaleString() ?? '—'}
+              value={getTodayCount(stats)}
               loading={loading}
               error={statsError}
             />
@@ -107,15 +131,7 @@ export default function Dashboard() {
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <StatCard
               title="Data Sources"
-              value={stats?.sources_count ?? '—'}
-              loading={loading}
-              error={statsError}
-            />
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <StatCard
-              title="Active Spiders"
-              value={stats?.active_spiders ?? '—'}
+              value={stats?.by_source.length ?? '—'}
               loading={loading}
               error={statsError}
             />
