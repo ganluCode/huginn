@@ -169,3 +169,25 @@ LOG_DATEFORMAT = "%Y-%m-%d %H:%M:%S"
 # Redis URL (read from huginn config, which loads .env)
 from huginn.core.config import settings as _huginn_settings  # noqa: E402
 REDIS_URL = _huginn_settings.redis_url
+
+
+# scrapy-playwright configuration
+# See https://github.com/scrapy-plugins/scrapy-playwright
+DOWNLOAD_HANDLERS = {
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "http": "scrapy.core.downloader.handlers.http11.HTTP11DownloadHandler",
+}
+
+# Use asyncio reactor for scrapy-playwright compatibility
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+
+# Playwright browser type (chromium, firefox, webkit)
+PLAYWRIGHT_BROWSER_TYPE = "chromium"
+
+# Playwright browser launch options
+PLAYWRIGHT_LAUNCH_OPTIONS = {
+    "headless": True,
+}
+
+# Default navigation timeout in milliseconds
+PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = 30000
