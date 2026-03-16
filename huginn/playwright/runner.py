@@ -12,10 +12,23 @@ Typical usage:
     flow = MyFlow()
     count = await run_flow(flow)
     print(f"Collected {count} items")
+
+CLI usage:
+    python -m huginn.playwright.runner <flow_name>
+    python -m huginn.playwright.runner --list
+    python -m huginn.playwright.runner --help
 """
 
+import argparse
+import asyncio
+import importlib.util
 import logging
+import os
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -298,4 +311,169 @@ async def _ensure_spider_registered(session: AsyncSession, flow: BaseFlow) -> No
         logger.debug("Flow already registered: %s", flow.name)
 
 
-__all__ = ["run_flow"]
+def _discover_flows(flows_dir: str | None = None) -> dict[str, type[BaseFlow]]:
+    """Discover all BaseFlow subclasses in the flows directory.
+
+    This function scans the flows directory for Python files, imports them,
+    and collects all BaseFlow subclasses into a dictionary keyed by flow.name.
+
+    Args:
+        flows_dir: Path to the flows directory. If None, uses the default
+                   huginn/playwright/flows directory.
+
+    Returns:
+        A dictionary mapping flow names to Flow classes.
+    """
+    if flows_dir is None:
+        # Get the default flows directory
+        current_file = Path(__file__)
+        flows_dir = str(current_file.parent / "flows")
+
+    flows: dict[str, type[BaseFlow]] = {}
+    flows_path = Path(flows_dir)
+
+    if not flows_path.exists():
+        logger.warning("Flows directory does not exist: %s", flows_dir)
+        return flows
+
+    # Find all Python files in the flows directory
+    for py_file in flows_path.glob("*.py"):
+        if py_file.name.startswith("_"):
+            continue
+
+        # Import the module
+        module_name = f"huginn.playwright.flows.{py_file.stem}"
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, py_file)
+            if spec is None or spec.loader is None:
+                logger.warning("Could not load spec for %s", py_file)
+                continue
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+
+            # Find all BaseFlow subclasses in the module
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if (
+                    isinstance(attr, type)
+                    and issubclass(attr, BaseFlow)
+                    and attr is not BaseFlow
+                ):
+                    flow_class = attr
+                    flow_name = getattr(flow_class, "name", None)
+                    if flow_name:
+                        flows[flow_name] = flow_class
+                        logger.debug("Discovered flow: %s from %s", flow_name, py_file.name)
+
+        except Exception as e:
+            logger.error("Failed to import %s: %s", py_file, e)
+
+    return flows
+
+
+def _parse_args(args: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments.
+
+    Args:
+        args: List of command line arguments. If None, uses sys.argv[1:].
+
+    Returns:
+        Parsed arguments namespace.
+    """
+    parser = argparse.ArgumentParser(
+        prog="huginn.playwright.runner",
+        description="Run Playwright data collection flows.",
+    )
+    parser.add_argument(
+        "flow_name",
+        nargs="?",
+        help="Name of the flow to run (use --list to see available flows)",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all available flows and exit",
+    )
+    parser.add_argument(
+        "--flows-dir",
+        type=str,
+        default=None,
+        help="Path to flows directory (default: huginn/playwright/flows)",
+    )
+
+    return parser.parse_args(args)
+
+
+def _print_available_flows(flows: dict[str, type[BaseFlow]]) -> None:
+    """Print available flows to stdout.
+
+    Args:
+        flows: Dictionary of flow names to Flow classes.
+    """
+    if not flows:
+        print("No flows found.")
+        return
+
+    print("Available flows:")
+    for flow_name in sorted(flows.keys()):
+        flow_class = flows[flow_name]
+        category = getattr(flow_class, "source_category", "unknown")
+        print(f"  - {flow_name} (category: {category})")
+
+
+def main(args: list[str] | None = None) -> None:
+    """CLI entry point for running Playwright flows.
+
+    This function is called when executing:
+        python -m huginn.playwright.runner <flow_name>
+
+    Args:
+        args: Command line arguments. If None, uses sys.argv[1:].
+
+    Returns:
+        None. Exits with appropriate status code.
+
+    Raises:
+        SystemExit: On error or when requested (e.g., --help).
+    """
+    parsed_args = _parse_args(args)
+
+    # Discover flows
+    flows = _discover_flows(parsed_args.flows_dir)
+
+    # Handle --list
+    if parsed_args.list:
+        _print_available_flows(flows)
+        sys.exit(0)
+
+    # Check if flow_name is provided
+    if not parsed_args.flow_name:
+        print("Error: No flow name specified.", file=sys.stderr)
+        print("Use --list to see available flows or --help for usage.", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if flow exists
+    flow_name = parsed_args.flow_name
+    if flow_name not in flows:
+        print(f"Error: Flow '{flow_name}' not found.", file=sys.stderr)
+        print(f"Available flows: {', '.join(sorted(flows.keys()))}", file=sys.stderr)
+        sys.exit(1)
+
+    # Run the flow
+    flow_class = flows[flow_name]
+    flow = flow_class()
+
+    try:
+        # Run the flow in an async context
+        count = asyncio.run(run_flow(flow))
+        print(f"Collected {count} items")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error running flow '{flow_name}': {e}", file=sys.stderr)
+        logger.exception("Flow execution failed")
+        sys.exit(1)
+
+
+__all__ = ["run_flow", "main", "_discover_flows"]
