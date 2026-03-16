@@ -54,6 +54,19 @@ DEFAULT_REQUEST_HEADERS = {
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
+#
+# Custom middlewares for user-agent randomization and proxy rotation.
+# Uncomment to enable:
+# - RandomUserAgentMiddleware: rotates User-Agent headers (requires RANDOM_UA_ENABLED=True)
+# - ProxyMiddleware: rotates proxy servers (requires PROXY_ENABLED=True)
+#
+# DOWNLOADER_MIDDLEWARES = {
+#     # Disable Scrapy's built-in UserAgentMiddleware to use our custom one
+#     "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
+#     # Custom middlewares (higher priority = executed earlier)
+#     "huginn.scrapy.middlewares.proxy.ProxyMiddleware": 350,
+#     "huginn.scrapy.middlewares.useragent.RandomUserAgentMiddleware": 400,
+# }
 DOWNLOADER_MIDDLEWARES = {}
 
 
