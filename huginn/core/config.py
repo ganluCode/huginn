@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     debug: bool = False
 
+    # 调度器配置
+    alert_webhook_url: str = ""
+    scheduler_max_workers: int = 4
+    spider_timeout: int = 600
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
