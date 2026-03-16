@@ -18,6 +18,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]",
     "httpx",
+    "apscheduler>=3.10",
 ]
 
 [project.optional-dependencies]
