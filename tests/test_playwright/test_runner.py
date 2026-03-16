@@ -15,7 +15,7 @@ from huginn.playwright.base_flow import BaseFlow
 from huginn.playwright.engine import PlaywrightEngine
 
 
-class TestFlow:
+class MockFlow:
     """Test Flow implementation for testing."""
 
     name = "test_flow"
@@ -74,7 +74,7 @@ class TestRunFlowSuccess:
         from huginn.playwright.runner import run_flow
 
         # Create test flow
-        flow = TestFlow(items=[{"id": 1}, {"id": 2}])
+        flow = MockFlow(items=[{"id": 1}, {"id": 2}])
 
         # Mock Playwright engine and page
         mock_engine = AsyncMock(spec=PlaywrightEngine)
@@ -94,8 +94,9 @@ class TestRunFlowSuccess:
         dedup_pipeline = DedupPipeline(redis_url="redis://localhost", _redis_client=mock_redis)
 
         # Mock storage backend
+        # Each item is saved individually, so each call returns 1
         mock_storage = AsyncMock()
-        mock_storage.save_items = AsyncMock(return_value=2)
+        mock_storage.save_items = AsyncMock(return_value=1)
 
         # Run the flow
         count = await run_flow(
@@ -133,8 +134,8 @@ class TestRunFlowSuccess:
         assert registry.last_status == SpiderStatus.SUCCESS
         assert registry.item_count == 2
 
-        # Verify storage was called
-        mock_storage.save_items.assert_called_once()
+        # Verify storage was called for each item
+        assert mock_storage.save_items.call_count == 2
 
     @pytest.mark.asyncio
     async def test_run_flow_empty_result(self, async_db_session):
@@ -142,7 +143,7 @@ class TestRunFlowSuccess:
         from huginn.playwright.runner import run_flow
 
         # Create test flow that returns empty list
-        flow = TestFlow(items=[])
+        flow = MockFlow(items=[])
 
         # Mock Playwright engine and page
         mock_engine = AsyncMock(spec=PlaywrightEngine)
@@ -190,7 +191,7 @@ class TestRunFlowFailure:
         from huginn.playwright.runner import run_flow
 
         # Create test flow that will fail
-        flow = TestFlow(should_fail=True)
+        flow = MockFlow(should_fail=True)
 
         # Mock Playwright engine and page
         mock_engine = AsyncMock(spec=PlaywrightEngine)
@@ -235,7 +236,7 @@ class TestRunFlowAutoRegister:
         from huginn.playwright.runner import run_flow
 
         # Create test flow
-        flow = TestFlow(items=[{"id": 1}])
+        flow = MockFlow(items=[{"id": 1}])
 
         # Mock Playwright engine and page
         mock_engine = AsyncMock(spec=PlaywrightEngine)
@@ -281,7 +282,7 @@ class TestRunFlowPipelineError:
         from huginn.playwright.runner import run_flow
 
         # Create test flow with multiple items
-        flow = TestFlow(items=[{"id": 1}, {"id": 2}, {"id": 3}])
+        flow = MockFlow(items=[{"id": 1}, {"id": 2}, {"id": 3}])
 
         # Mock Playwright engine and page
         mock_engine = AsyncMock(spec=PlaywrightEngine)
@@ -290,26 +291,28 @@ class TestRunFlowPipelineError:
 
         # Mock Redis for deduplication
         mock_redis = MagicMock()
-        # First item succeeds, second fails (simulate), third succeeds
-        call_count = [0]
-
-        def mock_sismember(*args, **kwargs):  # noqa: ARG001
-            call_count[0] += 1
-            # Second call (item 2) raises exception
-            if call_count[0] == 2:
-                raise ConnectionError("Redis connection lost")
-            return False
-
-        mock_redis.sismember.side_effect = mock_sismember
+        mock_redis.sismember.return_value = False
         mock_redis.sadd.return_value = 1
 
+        # Create custom clean pipeline that fails on second item
+        from huginn.core.pipelines import Pipeline
+
+        call_count = [0]
+
+        class FailingCleanPipeline(Pipeline):
+            def process(self, item):
+                call_count[0] += 1
+                if call_count[0] == 2:
+                    raise RuntimeError("Clean pipeline error on second item")
+                return item
+
         # Create pipelines
-        clean_pipeline = CleanPipeline()
+        clean_pipeline = FailingCleanPipeline()
         dedup_pipeline = DedupPipeline(redis_url="redis://localhost", _redis_client=mock_redis)
 
         # Mock storage backend
         mock_storage = AsyncMock()
-        mock_storage.save_items = AsyncMock(return_value=2)  # Only 2 items saved
+        mock_storage.save_items = AsyncMock(return_value=1)
 
         # Run the flow with caplog to capture warnings
         with caplog.at_level(logging.WARNING):
@@ -322,7 +325,7 @@ class TestRunFlowPipelineError:
                 storage_backend=mock_storage,
             )
 
-        # Verify入库条数 (2 out of 3 succeeded)
+        # Verify入库条数 (2 out of 3 succeeded, second failed)
         assert count == 2
 
         # Verify WARNING was logged
@@ -338,7 +341,7 @@ class TestRunFlowEngine:
         from huginn.playwright.runner import run_flow
 
         # Create test flow
-        flow = TestFlow(items=[{"id": 1}])
+        flow = MockFlow(items=[{"id": 1}])
 
         # Mock Redis for deduplication
         mock_redis = MagicMock()
@@ -384,7 +387,7 @@ class TestRunFlowEngine:
         from huginn.playwright.runner import run_flow
 
         # Create test flow
-        flow = TestFlow(items=[{"id": 1}])
+        flow = MockFlow(items=[{"id": 1}])
 
         # Mock Playwright engine and page
         mock_engine = AsyncMock(spec=PlaywrightEngine)
@@ -429,7 +432,7 @@ class TestRunFlowLifecycle:
         from huginn.playwright.runner import run_flow
 
         # Create test flow
-        flow = TestFlow(items=[{"id": 1}])
+        flow = MockFlow(items=[{"id": 1}])
 
         # Track call order
         call_order = []

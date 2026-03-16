@@ -14,6 +14,7 @@ dependencies = [
     "pydantic-settings",
     "asyncpg",
     "psycopg2-binary",
+    "aiosqlite",
     "redis",
     "fastapi>=0.110",
     "uvicorn[standard]",
