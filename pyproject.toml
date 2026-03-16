@@ -19,6 +19,7 @@ dependencies = [
     "uvicorn[standard]",
     "httpx",
     "apscheduler>=3.10",
+    "playwright>=1.40",
 ]
 
 [project.optional-dependencies]
