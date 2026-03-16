@@ -11,8 +11,9 @@ from typing import ClassVar
 
 import requests
 from scrapy import signals
-from scrapy.http import Request
+from scrapy.http import Request, Response
 from scrapy.spiders import Spider
+from twisted.internet.error import ConnectError
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class ProxyMiddleware:
         PROXY_LIST: List of proxy URLs (e.g., ["http://proxy1:8080", ...])
         PROXY_API_URL: API endpoint to fetch proxies from (optional)
         PROXY_API_CACHE_TTL: Cache time for API proxies in seconds (default: 300)
+        PROXY_MAX_FAIL: Maximum consecutive failures before removing proxy (default: 3)
 
     Example:
         # In settings.py
@@ -47,6 +49,7 @@ class ProxyMiddleware:
         proxy_list: list[str] | None = None,
         proxy_api_url: str | None = None,
         proxy_api_cache_ttl: int = 300,
+        proxy_max_fail: int = 3,
     ):
         """Initialize the middleware.
 
@@ -55,15 +58,22 @@ class ProxyMiddleware:
             proxy_list: Static list of proxy URLs. If None, defaults to empty list.
             proxy_api_url: API endpoint to fetch proxies from.
             proxy_api_cache_ttl: Cache time for API proxies in seconds.
+            proxy_max_fail: Maximum consecutive failures before removing a proxy.
         """
         self.proxy_enabled: bool = proxy_enabled
         self.proxy_list: list[str] = proxy_list if proxy_list is not None else []
         self.proxy_api_url: str | None = proxy_api_url
         self.proxy_api_cache_ttl: int = proxy_api_cache_ttl
+        self.proxy_max_fail: int = proxy_max_fail
 
         # API caching
         self._api_proxy: str | None = None
         self._api_proxy_fetched_at: float | None = None
+
+        # Failure tracking
+        self._proxy_fail_counts: dict[str, int] = {}
+        # Track initial proxy list size to detect when all are removed
+        self._initial_proxy_list_size: int = len(self.proxy_list)
 
     @classmethod
     def from_crawler(cls, crawler) -> "ProxyMiddleware":
@@ -83,12 +93,14 @@ class ProxyMiddleware:
         proxy_list = settings.getlist("PROXY_LIST", None) or []
         proxy_api_url = settings.get("PROXY_API_URL", None)
         proxy_api_cache_ttl = settings.getint("PROXY_API_CACHE_TTL", 300)
+        proxy_max_fail = settings.getint("PROXY_MAX_FAIL", 3)
 
         middleware = cls(
             proxy_enabled=proxy_enabled,
             proxy_list=proxy_list,
             proxy_api_url=proxy_api_url,
             proxy_api_cache_ttl=proxy_api_cache_ttl,
+            proxy_max_fail=proxy_max_fail,
         )
 
         crawler.signals.connect(
@@ -137,10 +149,22 @@ class ProxyMiddleware:
                 request.url,
             )
         else:
-            logger.warning(
-                "No proxy available for %s (PROXY_LIST empty and no API configured)",
-                request.url,
+            # Check if all proxies were removed due to failures
+            all_removed = (
+                self._initial_proxy_list_size > 0
+                and len(self.proxy_list) == 0
+                and not self.proxy_api_url
             )
+            if all_removed:
+                logger.error(
+                    "All proxies have been removed due to failures, connecting directly to %s",
+                    request.url,
+                )
+            else:
+                logger.warning(
+                    "No proxy available for %s (PROXY_LIST empty and no API configured)",
+                    request.url,
+                )
 
         return None
 
@@ -250,3 +274,104 @@ class ProxyMiddleware:
                 logger.warning(
                     "Proxy middleware enabled but no proxies configured (PROXY_LIST empty and no PROXY_API_URL)"
                 )
+
+    def process_response(self, request: Request, response: Response, spider: Spider) -> Response:
+        """Handle responses to detect proxy-related failures.
+
+        This method checks for HTTP status codes that indicate proxy issues:
+        - 403 Forbidden (proxy blocked)
+        - 407 Proxy Authentication Required
+        - 429 Too Many Requests (rate limiting via proxy)
+
+        Args:
+            request: The Scrapy request that generated this response
+            response: The Scrapy response received
+            spider: The spider that generated this request
+
+        Returns:
+            The response (unchanged)
+        """
+        proxy = request.meta.get("proxy")
+
+        # Only process if request used a proxy
+        if not proxy:
+            return response
+
+        # Check for proxy-related status codes
+        if response.status in (403, 407, 429):
+            self._mark_proxy_failed(proxy)
+            logger.warning(
+                "Proxy %s returned status %d for %s, marking as failed",
+                proxy,
+                response.status,
+                request.url,
+            )
+
+        return response
+
+    def process_exception(
+        self, request: Request, spider: Spider, exception: Exception
+    ) -> Request | None:
+        """Handle exceptions during request processing.
+
+        This method detects connection-related exceptions that may indicate
+        a failed proxy and marks the proxy for potential removal.
+
+        Only handles ConnectError and its subclasses (TimeoutError,
+        ConnectionRefusedError, etc.).
+
+        Args:
+            request: The Scrapy request that failed
+            spider: The spider that generated this request
+            exception: The exception that occurred
+
+        Returns:
+            The request object to trigger a retry, or None to not handle the exception
+        """
+        # Only handle connection-related exceptions
+        if not isinstance(exception, ConnectError):
+            return None
+
+        proxy = request.meta.get("proxy")
+
+        # Only process if request used a proxy
+        if not proxy:
+            return None
+
+        # Mark the proxy as failed
+        self._mark_proxy_failed(proxy)
+        logger.warning(
+            "Proxy %s caused exception %s for %s, marking as failed",
+            proxy,
+            type(exception).__name__,
+            request.url,
+        )
+
+        # Return the request to trigger a retry
+        return request
+
+    def _mark_proxy_failed(self, proxy: str) -> None:
+        """Mark a proxy as failed and remove it if it has failed too many times.
+
+        Args:
+            proxy: The proxy URL to mark as failed
+        """
+        # Increment the fail counter
+        self._proxy_fail_counts[proxy] = self._proxy_fail_counts.get(proxy, 0) + 1
+
+        fail_count = self._proxy_fail_counts[proxy]
+
+        # Check if we should remove the proxy
+        if fail_count >= self.proxy_max_fail:
+            # Remove from proxy list
+            if proxy in self.proxy_list:
+                self.proxy_list.remove(proxy)
+
+            # Remove from fail counts
+            del self._proxy_fail_counts[proxy]
+
+            logger.error(
+                "Proxy %s removed after %d consecutive failures",
+                proxy,
+                fail_count,
+            )
