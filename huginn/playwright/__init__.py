@@ -1,3 +1,5 @@
 """Huginn Playwright采集引擎模块."""
 
-__all__ = []
+from huginn.playwright.engine import PlaywrightEngine
+
+__all__ = ["PlaywrightEngine"]
