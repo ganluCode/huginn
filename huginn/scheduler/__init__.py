@@ -3,4 +3,6 @@
 Provides task scheduling capabilities for automated spider runs using APScheduler.
 """
 
-__all__ = []
+from huginn.scheduler.cron import parse_cron
+
+__all__ = ["parse_cron"]
