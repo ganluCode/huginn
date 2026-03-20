@@ -568,6 +568,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "redis" },
     { name = "scrapy" },
+    { name = "scrapy-playwright" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -599,6 +600,7 @@ requires-dist = [
     { name = "redis" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "scrapy", specifier = ">=2.11" },
+    { name = "scrapy-playwright", specifier = ">=0.0.40" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"] },
 ]
@@ -1390,6 +1392,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ee/54/000e2b35f68243ae6e625aab1477bebb973e6a3e57ef926ffb975a536220/scrapy-2.14.2.tar.gz", hash = "sha256:23bf5d37503ad16973bd09604b9c36249bd4bbc282c48ddedbf58105d4639337", size = 1255604, upload-time = "2026-03-12T14:47:44.624Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e2/e8/a383322ce3f157385f1238d1a71396d48e84635748d2b19c8c7c904aa407/scrapy-2.14.2-py3-none-any.whl", hash = "sha256:dc6ddf6e1601fc6c50191d2e4d4a65497e37c4b848f542f21c9278a55f86af42", size = 332950, upload-time = "2026-03-12T14:47:43.318Z" },
+]
+
+[[package]]
+name = "scrapy-playwright"
+version = "0.0.46"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "playwright" },
+    { name = "scrapy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cb/bc/12435db52dcb0cb33698e499b35411fc2553bcddf228291083a2019036d4/scrapy_playwright-0.0.46.tar.gz", hash = "sha256:2efe31155b2bbbd13fb011f3c189c21a6f34409c7f7b958881780509ce14a6bb", size = 48429, upload-time = "2026-01-21T12:11:16.653Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/6f/33fb13206fa4b93450484592cb5dbd243516b4ca63cf2ef1f641b51c3ca0/scrapy_playwright-0.0.46-py3-none-any.whl", hash = "sha256:8b20c504d773ec744ae81f5383989d04ba01dbf5e6c1991c0816e2f877398c54", size = 27749, upload-time = "2026-01-21T12:11:15.508Z" },
 ]
 
 [[package]]

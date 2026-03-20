@@ -1,116 +1,26 @@
 """Pytest 配置和共享 fixtures"""
 
-import json
-import sys
 from collections.abc import AsyncGenerator, Generator
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from dotenv import load_dotenv
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
-from sqlalchemy.types import TypeDecorator
+from sqlalchemy.orm import Session
 
 # 加载 .env.test 配置（在导入 huginn 模块之前）
 _env_test = Path(__file__).resolve().parent.parent / ".env.test"
 load_dotenv(_env_test, override=True)
 
-
-class StringJSON(TypeDecorator):
-    """JSON type for SQLite that stores as string.
-
-    SQLite doesn't have native JSON support like PostgreSQL's JSONB.
-    This type decorator stores JSON as TEXT and handles serialization.
-    """
-
-    impl = Text
-    cache_ok = True
-
-    def process_bind_param(self, value, dialect):
-        """Convert Python dict to JSON string for storage."""
-        if value is None:
-            return None
-        return json.dumps(value)
-
-    def process_result_value(self, value, dialect):
-        """Convert JSON string from storage to Python dict."""
-        if value is None:
-            return None
-        return json.loads(value)
-
-
-# Test-specific models for SQLite compatibility
-class Base(DeclarativeBase):
-    """所有模型的基类"""
-    pass
-
-
-class SpiderRegistry(Base):
-    """Spider 注册表 - SQLite 兼容版本"""
-    __tablename__ = "spider_registry"
-
-    name: Mapped[str] = mapped_column(String(64), primary_key=True)
-    engine: Mapped[str] = mapped_column(String(16), nullable=False)
-    category: Mapped[str | None] = mapped_column(String(32))
-    schedule: Mapped[str | None] = mapped_column(String(64))
-    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    config: Mapped[dict | None] = mapped_column(StringJSON, nullable=True)
-    last_run_at: Mapped[DateTime | None] = mapped_column(DateTime)
-    last_status: Mapped[str | None] = mapped_column(String(16))
-    item_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[DateTime] = mapped_column(DateTime, default=lambda: datetime.now())
-
-
-class SpiderRun(Base):
-    """Spider 运行日志 - SQLite 兼容版本"""
-    __tablename__ = "spider_runs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    spider_name: Mapped[str] = mapped_column(
-        String(64), ForeignKey("spider_registry.name"), nullable=False, index=True
-    )
-    started_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False)
-    finished_at: Mapped[DateTime | None] = mapped_column(DateTime)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
-    item_count: Mapped[int] = mapped_column(Integer, default=0)
-    error_message: Mapped[str | None] = mapped_column(Text)
-    duration_ms: Mapped[int | None] = mapped_column(Integer)
-
-
-class CollectedData(Base):
-    """采集数据主表 - SQLite 兼容版本"""
-    __tablename__ = "collected_data"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    source: Mapped[str] = mapped_column(String(64), nullable=False)
-    category: Mapped[str] = mapped_column(String(32), nullable=False)
-    collected_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False)
-    data: Mapped[dict] = mapped_column(StringJSON, nullable=False)
-
-
-# Import test settings and replace the models in huginn.core.models
-from huginn.core import models as huginn_models  # noqa: E402
-
-# Replace the base and models for testing
-huginn_models.Base = Base
-huginn_models.SpiderRegistry = SpiderRegistry
-huginn_models.SpiderRun = SpiderRun
-huginn_models.CollectedData = CollectedData
-
-# Also update sys.modules to use our test models
-sys.modules["huginn.core.models"].Base = Base
-sys.modules["huginn.core.models"].SpiderRegistry = SpiderRegistry
-sys.modules["huginn.core.models"].SpiderRun = SpiderRun
-sys.modules["huginn.core.models"].CollectedData = CollectedData
-
+# 直接使用生产 model（测试数据库也是 PostgreSQL）
+from huginn.core.models import Base, CollectedData, SpiderRegistry, SpiderRun  # noqa: E402, F401
 from huginn.core.config import Settings  # noqa: E402
 
 _test_settings = Settings(_env_file=str(_env_test))
