@@ -166,6 +166,11 @@ DNS_TIMEOUT = 60
 LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 LOG_DATEFORMAT = "%Y-%m-%d %H:%M:%S"
 
+# Reddit spider configuration
+REDDIT_SUBREDDITS = ["SideProject", "entrepreneur", "startups"]
+REDDIT_LIMIT = 25
+
+
 # Redis URL (read from huginn config, which loads .env)
 from huginn.core.config import settings as _huginn_settings  # noqa: E402
 REDIS_URL = _huginn_settings.redis_url

@@ -21,10 +21,10 @@ class TestCategoryEnum:
         assert Category.TECH != "social"
 
     def test_all_category_values(self):
-        """遍历所有 Category 值应为 5 个"""
+        """遍历所有 Category 值应为 6 个"""
         values = {c.value for c in Category}
-        assert values == {"tech", "social", "finance", "market", "news"}
-        assert len(Category) == 5
+        assert values == {"tech", "social", "finance", "market", "news", "community"}
+        assert len(Category) == 6
 
 
 class TestSpiderStatusEnum:
