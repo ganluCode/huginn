@@ -158,3 +158,13 @@ def run_spider(spider_name: str) -> None:
         # Step 7: Send alert on failure
         if status == "failed":
             alert.send_alert(spider_name, error_message or "Unknown error", run_id)
+
+        # Step 8: Check data anomaly after any completed run
+        try:
+            from huginn.notify.anomaly import check_data_anomaly  # noqa: PLC0415
+
+            check_data_anomaly(spider_name, run_record.item_count or 0)
+        except Exception as exc:
+            logger.error(
+                "check_data_anomaly raised unexpectedly for spider=%s: %s", spider_name, exc
+            )

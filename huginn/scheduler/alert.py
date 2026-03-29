@@ -15,6 +15,16 @@ from huginn.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _run_check_spider_failure(spider_name: str) -> None:
+    """Call check_spider_failure, catching all exceptions to protect caller."""
+    try:
+        from huginn.notify.anomaly import check_spider_failure  # noqa: PLC0415
+
+        check_spider_failure(spider_name)
+    except Exception as exc:
+        logger.error("check_spider_failure raised unexpectedly for spider=%s: %s", spider_name, exc)
+
 # Event type for spider failure alerts
 SPIDER_FAILED_EVENT = "spider_failed"
 
@@ -86,3 +96,6 @@ def send_alert(spider_name: str, error_message: str, run_id: str) -> None:
     except (httpx.HTTPError, OSError) as e:
         # Catch all httpx errors and socket-level errors
         logger.warning("Failed to send alert for spider '%s': %s", spider_name, e)
+
+    # Integrate check_spider_failure for consecutive failure detection
+    _run_check_spider_failure(spider_name)
