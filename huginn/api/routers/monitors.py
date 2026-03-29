@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from huginn.api.deps import get_db_session
-from huginn.core.models import KeywordMonitor
+from huginn.core.models import KeywordMonitor, Notification
 
 __all__ = ["router"]
 
@@ -144,3 +144,60 @@ async def delete_monitor(
         )
 
     await db_session.delete(monitor)
+
+
+class NotificationItem(BaseModel):
+    """通知历史响应模型"""
+
+    id: int
+    type: str
+    title: str
+    body: str | None = None
+    source: str | None = None
+    triggered_at: datetime
+    sent: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("triggered_at")
+    def serialize_datetime_to_utc(self, dt: datetime | None) -> str | None:
+        """将 datetime 序列化为 ISO 8601 UTC 格式（带 Z 后缀）"""
+        if dt is None:
+            return None
+        dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+        return dt.isoformat().replace("+00:00", "Z")
+
+
+@router.get("/notifications", response_model=list[NotificationItem])
+async def list_notifications(
+    type: str | None = None,
+    source: str | None = None,
+    limit: int = 50,
+    db_session: AsyncSession | None = Depends(get_db_session),
+) -> list[NotificationItem]:
+    """获取通知历史列表
+
+    Args:
+        type: 过滤通知类型（如 keyword_hit / spider_failure / data_anomaly）
+        source: 过滤数据源
+        limit: 返回条数，默认 50，最大 200
+        db_session: 数据库 session（依赖注入）
+
+    Returns:
+        list[NotificationItem]: 通知列表，按 triggered_at DESC 排序
+    """
+    if db_session is None:
+        return []
+
+    effective_limit = min(limit, 200)
+
+    query = select(Notification).order_by(Notification.triggered_at.desc()).limit(effective_limit)
+    if type is not None:
+        query = query.where(Notification.type == type)
+    if source is not None:
+        query = query.where(Notification.source == source)
+
+    result = await db_session.execute(query)
+    notifications = result.scalars().all()
+
+    return [NotificationItem.model_validate(n) for n in notifications]

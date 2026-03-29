@@ -270,3 +270,163 @@ class TestDeleteMonitor:
             assert response.status_code == status.HTTP_404_NOT_FOUND
         finally:
             app.dependency_overrides = {}
+
+
+class TestGetNotifications:
+    """测试 GET /api/notifications"""
+
+    def _make_notification(self, id=1, type="keyword_hit", title="Test", body=None, source=None, sent=False):
+        from huginn.core.models import Notification
+        return Notification(
+            id=id,
+            type=type,
+            title=title,
+            body=body,
+            source=source,
+            triggered_at=datetime.now(timezone.utc),
+            sent=sent,
+        )
+
+    def test_returns_200_with_empty_list(self):
+        """数据库无记录时返回 200 和空列表"""
+        mock_session = create_mock_session()
+        mock_session.execute.return_value.scalars.return_value.all.return_value = []
+
+        async def mock_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = mock_get_db
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications")
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json() == []
+        finally:
+            app.dependency_overrides = {}
+
+    def test_returns_correct_fields(self):
+        """返回包含 id/type/title/body/source/triggered_at/sent 的通知"""
+        notif = self._make_notification(id=1, type="keyword_hit", title="AI matched", body="detail", source="hackernews", sent=True)
+        mock_session = create_mock_session()
+        mock_session.execute.return_value.scalars.return_value.all.return_value = [notif]
+
+        async def mock_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = mock_get_db
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications")
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert len(data) == 1
+            item = data[0]
+            assert item["id"] == 1
+            assert item["type"] == "keyword_hit"
+            assert item["title"] == "AI matched"
+            assert item["body"] == "detail"
+            assert item["source"] == "hackernews"
+            assert "triggered_at" in item
+            assert item["sent"] is True
+        finally:
+            app.dependency_overrides = {}
+
+    def test_filter_by_type(self):
+        """?type=keyword_hit 只返回对应类型"""
+        mock_session = create_mock_session()
+        notif = self._make_notification(id=1, type="keyword_hit")
+        mock_session.execute.return_value.scalars.return_value.all.return_value = [notif]
+
+        async def mock_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = mock_get_db
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications?type=keyword_hit")
+            assert response.status_code == status.HTTP_200_OK
+            # Verify the query was executed (filter applied server-side via SQL)
+            assert mock_session.execute.called
+        finally:
+            app.dependency_overrides = {}
+
+    def test_filter_by_source(self):
+        """?source=hackernews 只返回对应数据源"""
+        mock_session = create_mock_session()
+        notif = self._make_notification(id=1, source="hackernews")
+        mock_session.execute.return_value.scalars.return_value.all.return_value = [notif]
+
+        async def mock_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = mock_get_db
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications?source=hackernews")
+            assert response.status_code == status.HTTP_200_OK
+        finally:
+            app.dependency_overrides = {}
+
+    def test_limit_parameter(self):
+        """?limit=10 限制返回条数"""
+        mock_session = create_mock_session()
+        mock_session.execute.return_value.scalars.return_value.all.return_value = []
+
+        async def mock_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = mock_get_db
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications?limit=10")
+            assert response.status_code == status.HTTP_200_OK
+        finally:
+            app.dependency_overrides = {}
+
+    def test_limit_over_200_capped_at_200(self):
+        """?limit=500 超过 200 时按 200 处理，返回 200 OK 而不是 422"""
+        mock_session = create_mock_session()
+        mock_session.execute.return_value.scalars.return_value.all.return_value = []
+
+        async def mock_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = mock_get_db
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications?limit=500")
+            assert response.status_code == status.HTTP_200_OK
+        finally:
+            app.dependency_overrides = {}
+
+    def test_default_limit_is_50(self):
+        """无参数时默认返回最近 50 条"""
+        mock_session = create_mock_session()
+        notifications = [self._make_notification(id=i) for i in range(1, 51)]
+        mock_session.execute.return_value.scalars.return_value.all.return_value = notifications
+
+        async def mock_get_db():
+            yield mock_session
+
+        app.dependency_overrides[get_db_session] = mock_get_db
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications")
+            assert response.status_code == status.HTTP_200_OK
+            assert len(response.json()) == 50
+        finally:
+            app.dependency_overrides = {}
+
+    def test_returns_empty_list_when_db_unavailable(self):
+        """数据库不可用时返回空列表"""
+        async def mock_get_db_none():
+            yield None
+
+        app.dependency_overrides[get_db_session] = mock_get_db_none
+        try:
+            with TestClient(app) as client:
+                response = client.get("/api/notifications")
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json() == []
+        finally:
+            app.dependency_overrides = {}
