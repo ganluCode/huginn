@@ -170,6 +170,9 @@ LOG_DATEFORMAT = "%Y-%m-%d %H:%M:%S"
 REDDIT_SUBREDDITS = ["SideProject", "entrepreneur", "startups"]
 REDDIT_LIMIT = 25
 
+# Google Trends spider configuration
+GOOGLE_TRENDS_REGIONS = ["china", "united_states"]
+
 
 # Redis URL (read from huginn config, which loads .env)
 from huginn.core.config import settings as _huginn_settings  # noqa: E402

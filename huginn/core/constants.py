@@ -12,6 +12,7 @@ class Category(StrEnum):
     MARKET = "market"
     NEWS = "news"
     COMMUNITY = "community"
+    TRENDS = "trends"
 
 
 class SpiderStatus(StrEnum):
