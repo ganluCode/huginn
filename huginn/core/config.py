@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # 调度器配置
+    feishu_webhook_url: str = ""
     alert_webhook_url: str = ""
     scheduler_max_workers: int = 4
     spider_timeout: int = 600
