@@ -173,6 +173,13 @@ REDDIT_LIMIT = 25
 # Google Trends spider configuration
 GOOGLE_TRENDS_REGIONS = ["china", "united_states"]
 
+# App Store spider configuration
+APPSTORE_TARGETS = [
+    {"country": "cn", "chart": "top-free", "limit": 25},
+    {"country": "cn", "chart": "top-grossing", "limit": 25},
+    {"country": "us", "chart": "top-free", "limit": 25},
+]
+
 
 # Redis URL (read from huginn config, which loads .env)
 from huginn.core.config import settings as _huginn_settings  # noqa: E402

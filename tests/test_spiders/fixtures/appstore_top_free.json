@@ -1,0 +1,71 @@
+{
+  "feed": {
+    "results": [
+      {
+        "id": "389801252",
+        "name": "Instagram",
+        "url": "https://apps.apple.com/cn/app/instagram/id389801252",
+        "artistName": "Instagram, Inc.",
+        "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple126/v4/instagram/icon.jpg/100x100bb.jpg",
+        "releaseDate": "2010-10-06",
+        "genres": [
+          {
+            "genreId": "6005",
+            "name": "Social Networking"
+          }
+        ]
+      },
+      {
+        "id": "310633997",
+        "name": "WhatsApp Messenger",
+        "url": "https://apps.apple.com/cn/app/whatsapp/id310633997",
+        "artistName": "WhatsApp Inc.",
+        "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/whatsapp/icon.jpg/100x100bb.jpg",
+        "releaseDate": "2009-05-03",
+        "genres": [
+          {
+            "genreId": "6002",
+            "name": "Utilities"
+          }
+        ]
+      },
+      {
+        "id": "544007664",
+        "name": "YouTube",
+        "url": "https://apps.apple.com/cn/app/youtube/id544007664",
+        "artistName": "Google LLC",
+        "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/youtube/icon.jpg/100x100bb.jpg",
+        "releaseDate": "2012-09-12",
+        "genres": [
+          {
+            "genreId": "6016",
+            "name": "Entertainment"
+          }
+        ]
+      },
+      {
+        "id": "284882215",
+        "name": "Facebook",
+        "url": "https://apps.apple.com/cn/app/facebook/id284882215",
+        "artistName": "Meta Platforms, Inc.",
+        "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/facebook/icon.jpg/100x100bb.jpg",
+        "releaseDate": "2008-08-01",
+        "genres": []
+      },
+      {
+        "id": "1278508951",
+        "name": "Notchless App",
+        "url": "https://apps.apple.com/cn/app/notchless/id1278508951",
+        "artistName": "Some Developer",
+        "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/notchless/icon.jpg/100x100bb.jpg",
+        "releaseDate": "2023-01-15",
+        "genres": [
+          {
+            "genreId": "6018",
+            "name": "Finance"
+          }
+        ]
+      }
+    ]
+  }
+}
