@@ -348,6 +348,14 @@ class StorageScrapyPipeline:
                 # Re-raise to let Scrapy handle the error
                 raise
 
+        # After successful storage, run keyword monitoring (never raises)
+        try:
+            from huginn.notify.keyword import check_keyword
+
+            check_keyword(collected_item)
+        except Exception as e:
+            logger.error("check_keyword raised unexpectedly: %s", e)
+
         return item
 
     def close_spider(self, spider: Spider) -> None:
